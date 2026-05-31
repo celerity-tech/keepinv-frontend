@@ -1,0 +1,176 @@
+<div class="mx-auto max-w-6xl">
+  <p class="max-w-prose text-sm text-muted">
+    The vendors you buy stock from. Keep their contact details and reorder channels here so buying
+    back a part is quick. Products link to a supplier once the inventory module is in place.
+  </p>
+
+  <!-- Quick add: name only, stays focused for rapid entry. Details are filled in the pane. -->
+  <form [formGroup]="addForm" (ngSubmit)="addSupplier()" novalidate class="mt-6">
+    <label for="add-supplier" class="block text-sm font-medium">Add a supplier</label>
+    <div class="mt-1.5 flex items-start gap-2 sm:max-w-md">
+      <div class="min-w-0 flex-1">
+        <input
+          pInputText
+          id="add-supplier"
+          #addInput
+          type="text"
+          formControlName="name"
+          placeholder="e.g. Sunrise Motor Parts"
+          autocomplete="off"
+          maxlength="100"
+          [invalid]="!!addError()"
+          [attr.aria-describedby]="addError() ? 'add-error' : null"
+          class="w-full text-sm"
+        />
+        @if (addError()) {
+          <p id="add-error" role="alert" class="mt-1.5 text-xs text-danger">{{ addError() }}</p>
+        }
+      </div>
+      <p-button
+        type="submit"
+        [label]="creating() ? 'Adding...' : 'Add'"
+        [loading]="creating()"
+        [disabled]="creating()"
+        styleClass="shrink-0 font-medium"
+      />
+    </div>
+  </form>
+
+  @if (loading()) {
+    <div class="mt-8 rounded-lg border border-line bg-counter p-4">
+      @for (placeholder of [0, 1, 2, 3]; track placeholder) {
+        <div class="flex items-center gap-3 border-b border-line py-3 last:border-0">
+          <div class="h-3.5 w-44 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+        </div>
+      }
+    </div>
+  } @else if (loadError()) {
+    <div class="mt-8 rounded-lg border border-line bg-counter px-6 py-12 text-center">
+      <p class="text-sm font-medium text-ink">Couldn't load suppliers</p>
+      <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+        The server didn't respond. Check your connection and try again.
+      </p>
+      <p-button
+        type="button"
+        label="Retry"
+        [text]="true"
+        (onClick)="load()"
+        styleClass="mt-3 font-medium"
+      />
+    </div>
+  } @else if (isEmpty()) {
+    <div class="mt-8 rounded-lg border border-dashed border-line px-6 py-16 text-center">
+      <span class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-panel text-muted">
+        <i class="pi pi-truck text-xl" aria-hidden="true"></i>
+      </span>
+      <p class="mt-3 text-sm font-medium text-ink">No suppliers yet</p>
+      <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+        Add your first supplier above, then add their contact details and reorder channels.
+      </p>
+    </div>
+  } @else {
+    <div class="mt-8 lg:grid lg:grid-cols-[21rem_minmax(0,1fr)] lg:items-start lg:gap-5">
+      <!-- Directory -->
+      <section
+        aria-label="Supplier directory"
+        class="overflow-hidden rounded-lg border border-line bg-counter lg:block"
+        [class.hidden]="detailOpenMobile()"
+      >
+        <p-table
+          #dt
+          [value]="suppliers()"
+          dataKey="id"
+          selectionMode="single"
+          [selection]="selected()"
+          (selectionChange)="onSelectionChange($event)"
+          [paginator]="count() > rows"
+          [rows]="rows"
+          [globalFilterFields]="filterFields"
+          [rowHover]="true"
+          styleClass="text-sm"
+        >
+          <ng-template pTemplate="caption">
+            <label for="supplier-search" class="sr-only">Search suppliers</label>
+            <div class="relative">
+              <i
+                class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted"
+                aria-hidden="true"
+              ></i>
+              <input
+                pInputText
+                id="supplier-search"
+                type="search"
+                (input)="dt.filterGlobal($any($event.target).value, 'contains')"
+                placeholder="Search name, contact, email..."
+                autocomplete="off"
+                class="w-full pl-9 text-sm"
+              />
+            </div>
+          </ng-template>
+          <ng-template pTemplate="body" let-supplier>
+            <tr [pSelectableRow]="supplier" class="cursor-pointer">
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate font-medium text-ink">{{ supplier.name }}</p>
+                    <p class="truncate text-xs text-muted">
+                      {{ supplier.contactName || supplier.email || 'No contact yet' }}
+                    </p>
+                  </div>
+                  <i
+                    class="pi pi-angle-right shrink-0 text-muted lg:hidden"
+                    aria-hidden="true"
+                  ></i>
+                </div>
+              </td>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="emptymessage">
+            <tr>
+              <td class="px-4 py-10 text-center text-sm text-muted">
+                No suppliers match your search.
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </section>
+
+      <!-- Detail -->
+      <section
+        aria-label="Supplier details"
+        class="overflow-hidden rounded-lg border border-line bg-counter lg:block lg:min-h-[28rem]"
+        [class.hidden]="!detailOpenMobile()"
+      >
+        @if (selected(); as supplier) {
+          <div class="border-b border-line px-3 py-2 lg:hidden">
+            <button
+              type="button"
+              (click)="backToList()"
+              class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+            >
+              <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+              All suppliers
+            </button>
+          </div>
+          <app-supplier-detail
+            [supplier]="supplier"
+            (updated)="onSupplierUpdated($event)"
+            (archived)="onSupplierArchived($event)"
+          />
+        } @else {
+          <div class="grid h-full place-items-center px-6 py-20 text-center">
+            <div>
+              <span class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-panel text-muted">
+                <i class="pi pi-arrow-left text-xl" aria-hidden="true"></i>
+              </span>
+              <p class="mt-3 text-sm font-medium text-ink">Select a supplier</p>
+              <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+                Pick a supplier from the list to see contact details and reorder channels.
+              </p>
+            </div>
+          </div>
+        }
+      </section>
+    </div>
+  }
+</div>

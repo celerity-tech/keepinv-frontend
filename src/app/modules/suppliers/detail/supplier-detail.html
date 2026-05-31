@@ -1,0 +1,475 @@
+<div class="flex h-full flex-col">
+  <!-- Header: identity + supplier-level actions -->
+  <div class="flex items-start gap-3 border-b border-line px-5 py-4">
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-lg font-semibold tracking-tight text-ink">{{ supplier().name }}</h2>
+      @if (supplier().contactName) {
+        <p class="mt-0.5 truncate text-sm text-muted">{{ supplier().contactName }}</p>
+      } @else {
+        <p class="mt-0.5 text-sm text-muted">No contact person yet</p>
+      }
+    </div>
+    @if (!editing() && !archiving()) {
+      <div class="flex shrink-0 items-center gap-1.5">
+        <p-button
+          type="button"
+          label="Edit"
+          icon="pi pi-pencil"
+          [outlined]="true"
+          size="small"
+          (onClick)="startEdit()"
+          styleClass="font-medium"
+        />
+        <button
+          type="button"
+          (click)="confirmArchive()"
+          aria-label="Archive supplier"
+          class="grid h-9 w-9 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+        >
+          <i class="pi pi-folder text-base" aria-hidden="true"></i>
+        </button>
+      </div>
+    }
+  </div>
+
+  <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+    <!-- Archive confirmation -->
+    @if (archiving()) {
+      <div class="rounded-lg border border-line bg-panel px-4 py-4">
+        <p class="text-sm font-medium text-ink">Archive "{{ supplier().name }}"?</p>
+        <p class="mt-1 text-sm text-muted">
+          It will no longer appear in the suppliers list or be selectable when adding stock.
+        </p>
+        @if (archiveError()) {
+          <p role="alert" class="mt-2 text-xs text-danger">{{ archiveError() }}</p>
+        }
+        <div class="mt-3 flex items-center gap-1.5">
+          <p-button
+            type="button"
+            severity="danger"
+            [label]="archiveBusy() ? 'Archiving...' : 'Archive supplier'"
+            [loading]="archiveBusy()"
+            [disabled]="archiveBusy()"
+            (onClick)="archive()"
+            styleClass="font-medium"
+          />
+          <p-button
+            type="button"
+            label="Cancel"
+            [text]="true"
+            (onClick)="cancelArchive()"
+            styleClass="text-muted"
+          />
+        </div>
+      </div>
+    }
+
+    <!-- Edit supplier -->
+    @if (editing()) {
+      <form [formGroup]="editForm" (ngSubmit)="saveEdit()" novalidate class="flex flex-col gap-4">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-name" class="text-sm font-medium">Name</label>
+            <input
+              pInputText
+              #editNameInput
+              id="edit-name"
+              type="text"
+              formControlName="name"
+              autocomplete="off"
+              maxlength="100"
+              [invalid]="editForm.controls.name.touched && editForm.controls.name.invalid"
+              class="w-full text-sm"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-contact" class="text-sm font-medium">Contact person</label>
+            <input
+              pInputText
+              id="edit-contact"
+              type="text"
+              formControlName="contactName"
+              autocomplete="off"
+              maxlength="100"
+              class="w-full text-sm"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-email" class="text-sm font-medium">Email</label>
+            <input
+              pInputText
+              id="edit-email"
+              type="email"
+              formControlName="email"
+              autocomplete="off"
+              inputmode="email"
+              maxlength="255"
+              [invalid]="editForm.controls.email.touched && editForm.controls.email.invalid"
+              class="w-full text-sm"
+            />
+            @if (editForm.controls.email.touched && editForm.controls.email.invalid) {
+              <p role="alert" class="text-xs text-danger">Enter a valid email address.</p>
+            }
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="edit-phone" class="text-sm font-medium">Phone</label>
+            <input
+              pInputText
+              id="edit-phone"
+              type="tel"
+              formControlName="phone"
+              autocomplete="off"
+              inputmode="tel"
+              maxlength="50"
+              class="w-full text-sm"
+            />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-address" class="text-sm font-medium">Address</label>
+          <input
+            pInputText
+            id="edit-address"
+            type="text"
+            formControlName="address"
+            autocomplete="off"
+            maxlength="255"
+            class="w-full text-sm"
+          />
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label for="edit-notes" class="text-sm font-medium">Notes</label>
+          <textarea
+            pTextarea
+            id="edit-notes"
+            formControlName="notes"
+            rows="3"
+            maxlength="1000"
+            class="w-full resize-y text-sm"
+            placeholder="Lead times, minimum orders, which parts they carry..."
+          ></textarea>
+        </div>
+        @if (editError()) {
+          <p role="alert" class="text-xs text-danger">{{ editError() }}</p>
+        }
+        <div class="flex items-center gap-1.5">
+          <p-button
+            type="submit"
+            [label]="savingEdit() ? 'Saving...' : 'Save changes'"
+            [loading]="savingEdit()"
+            [disabled]="savingEdit()"
+            styleClass="font-medium"
+          />
+          <p-button
+            type="button"
+            label="Cancel"
+            [text]="true"
+            (onClick)="cancelEdit()"
+            styleClass="text-muted"
+          />
+        </div>
+      </form>
+    }
+
+    <!-- Read-only contact details -->
+    @if (!editing() && !archiving()) {
+      <section aria-label="Contact details">
+        @if (hasContact()) {
+          <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            @if (supplier().email) {
+              <div class="min-w-0">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Email</dt>
+                <dd class="mt-0.5 truncate text-sm">
+                  <a
+                    [href]="'mailto:' + supplier().email"
+                    class="rounded text-ink underline decoration-line underline-offset-2 outline-none hover:decoration-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                  >{{ supplier().email }}</a>
+                </dd>
+              </div>
+            }
+            @if (supplier().phone) {
+              <div class="min-w-0">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Phone</dt>
+                <dd class="mt-0.5 truncate text-sm tabular-nums">
+                  <a
+                    [href]="'tel:' + supplier().phone"
+                    class="rounded text-ink underline decoration-line underline-offset-2 outline-none hover:decoration-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                  >{{ supplier().phone }}</a>
+                </dd>
+              </div>
+            }
+            @if (supplier().address) {
+              <div class="min-w-0 sm:col-span-2">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Address</dt>
+                <dd class="mt-0.5 text-sm text-ink">{{ supplier().address }}</dd>
+              </div>
+            }
+            @if (supplier().notes) {
+              <div class="min-w-0 sm:col-span-2">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Notes</dt>
+                <dd class="mt-0.5 whitespace-pre-line text-sm text-muted">{{ supplier().notes }}</dd>
+              </div>
+            }
+          </dl>
+        } @else {
+          <p class="text-sm text-muted">
+            No contact details saved. Use <span class="font-medium text-ink">Edit</span> to add an
+            email, phone, or address.
+          </p>
+        }
+      </section>
+
+      <!-- Reorder channels: the buy-back shortcut -->
+      <section class="mt-7" aria-labelledby="channels-heading">
+        <div class="flex items-baseline justify-between gap-3">
+          <h3 id="channels-heading" class="text-sm font-semibold tracking-tight text-ink">
+            Reorder channels
+          </h3>
+          @if (!linksLoading() && !linksError() && linkCount() > 0) {
+            <span class="text-xs tabular-nums text-muted">
+              {{ linkCount() }} {{ linkCount() === 1 ? 'channel' : 'channels' }}
+            </span>
+          }
+        </div>
+        <p class="mt-1 max-w-prose text-sm text-muted">
+          Saved links to message or order from this supplier. Open one to reach them and buy back.
+        </p>
+
+        <!-- Add channel -->
+        <form
+          [formGroup]="addLinkForm"
+          (ngSubmit)="addLink()"
+          novalidate
+          class="mt-3 rounded-lg border border-line bg-panel p-3"
+        >
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <div class="sm:w-40 sm:shrink-0">
+              <label for="add-link-platform" class="sr-only">Platform</label>
+              <p-select
+                inputId="add-link-platform"
+                formControlName="platform"
+                [options]="platforms"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Platform"
+                appendTo="body"
+                styleClass="w-full text-sm"
+              />
+            </div>
+            <div class="min-w-0 flex-1">
+              <label for="add-link-url" class="sr-only">Link URL</label>
+              <input
+                pInputText
+                id="add-link-url"
+                type="url"
+                formControlName="url"
+                inputmode="url"
+                autocomplete="off"
+                maxlength="2048"
+                placeholder="https://..."
+                [invalid]="!!addLinkError()"
+                class="w-full text-sm"
+              />
+            </div>
+            <div class="min-w-0 sm:w-36 sm:shrink-0">
+              <label for="add-link-label" class="sr-only">Label (optional)</label>
+              <input
+                pInputText
+                id="add-link-label"
+                type="text"
+                formControlName="label"
+                autocomplete="off"
+                maxlength="100"
+                placeholder="Label (optional)"
+                class="w-full text-sm"
+              />
+            </div>
+            <p-button
+              type="submit"
+              [label]="addingLink() ? 'Adding...' : 'Add'"
+              icon="pi pi-plus"
+              [loading]="addingLink()"
+              [disabled]="addingLink()"
+              styleClass="shrink-0 font-medium sm:w-auto"
+            />
+          </div>
+          @if (addLinkError()) {
+            <p role="alert" class="mt-2 text-xs text-danger">{{ addLinkError() }}</p>
+          }
+        </form>
+
+        <!-- Channel list -->
+        @if (linksLoading()) {
+          <ul class="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line">
+            @for (placeholder of [0, 1]; track placeholder) {
+              <li class="flex items-center gap-3 px-4 py-3">
+                <div class="h-8 w-8 animate-pulse rounded-md bg-line motion-reduce:animate-none"></div>
+                <div class="h-3.5 w-48 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+              </li>
+            }
+          </ul>
+        } @else if (linksError()) {
+          <div class="mt-3 rounded-lg border border-line px-6 py-8 text-center">
+            <p class="text-sm font-medium text-ink">Couldn't load channels</p>
+            <p-button
+              type="button"
+              label="Retry"
+              [text]="true"
+              (onClick)="reloadLinks()"
+              styleClass="mt-2 font-medium"
+            />
+          </div>
+        } @else if (linksEmpty()) {
+          <div class="mt-3 rounded-lg border border-dashed border-line px-6 py-10 text-center">
+            <span class="mx-auto grid h-10 w-10 place-items-center rounded-full bg-panel text-muted">
+              <i class="pi pi-send text-lg" aria-hidden="true"></i>
+            </span>
+            <p class="mt-2 text-sm font-medium text-ink">No channels yet</p>
+            <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+              Add a Messenger, WhatsApp, or email link above so reordering is one tap away.
+            </p>
+          </div>
+        } @else {
+          <ul class="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line">
+            @for (link of links(); track link.id) {
+              <li>
+                @if (isEditingLink(link)) {
+                  <form
+                    [formGroup]="editLinkForm"
+                    (ngSubmit)="saveLink()"
+                    novalidate
+                    class="flex flex-col gap-2 px-4 py-3"
+                  >
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
+                      <div class="sm:w-40 sm:shrink-0">
+                        <label class="sr-only" [attr.for]="'edit-link-platform-' + link.id">Platform</label>
+                        <p-select
+                          [inputId]="'edit-link-platform-' + link.id"
+                          formControlName="platform"
+                          [options]="platforms"
+                          optionLabel="label"
+                          optionValue="value"
+                          placeholder="Platform"
+                          appendTo="body"
+                          styleClass="w-full text-sm"
+                        />
+                      </div>
+                      <input
+                        pInputText
+                        type="url"
+                        formControlName="url"
+                        aria-label="Link URL"
+                        inputmode="url"
+                        autocomplete="off"
+                        maxlength="2048"
+                        class="w-full min-w-0 flex-1 text-sm"
+                      />
+                      <input
+                        pInputText
+                        type="text"
+                        formControlName="label"
+                        aria-label="Label"
+                        autocomplete="off"
+                        maxlength="100"
+                        placeholder="Label (optional)"
+                        class="w-full text-sm sm:w-36 sm:shrink-0"
+                      />
+                    </div>
+                    @if (linkEditError()) {
+                      <p role="alert" class="text-xs text-danger">{{ linkEditError() }}</p>
+                    }
+                    <div class="flex items-center gap-1.5">
+                      <p-button
+                        type="submit"
+                        [label]="savingLink() ? 'Saving...' : 'Save'"
+                        [loading]="savingLink()"
+                        [disabled]="savingLink()"
+                        styleClass="font-medium"
+                      />
+                      <p-button
+                        type="button"
+                        label="Cancel"
+                        [text]="true"
+                        (onClick)="cancelEditLink()"
+                        styleClass="text-muted"
+                      />
+                    </div>
+                  </form>
+                } @else if (isArchivingLink(link)) {
+                  <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-ink">
+                        Remove this {{ meta(link.platform).label }} channel?
+                      </p>
+                      @if (linkArchiveError()) {
+                        <p role="alert" class="mt-0.5 text-xs text-danger">{{ linkArchiveError() }}</p>
+                      }
+                    </div>
+                    <div class="flex shrink-0 items-center gap-1.5">
+                      <p-button
+                        type="button"
+                        severity="danger"
+                        [label]="linkBusyId() === link.id ? 'Removing...' : 'Remove'"
+                        [loading]="linkBusyId() === link.id"
+                        [disabled]="linkBusyId() === link.id"
+                        (onClick)="archiveLink(link)"
+                        styleClass="font-medium"
+                      />
+                      <p-button
+                        type="button"
+                        label="Cancel"
+                        [text]="true"
+                        (onClick)="cancelArchiveLink()"
+                        styleClass="text-muted"
+                      />
+                    </div>
+                  </div>
+                } @else {
+                  <div class="flex items-center gap-3 px-4 py-3">
+                    <span class="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-panel text-muted">
+                      <i [class]="meta(link.platform).icon" class="text-base" aria-hidden="true"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium text-ink">
+                        {{ link.label || meta(link.platform).label }}
+                      </p>
+                      <p class="truncate text-xs text-muted">{{ link.url }}</p>
+                    </div>
+                    <a
+                      [href]="link.url"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.aria-label]="'Open ' + meta(link.platform).label + ' channel in a new tab'"
+                      class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink outline-none transition-colors hover:bg-line/60 focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                    >
+                      Open
+                      <i class="pi pi-external-link text-[0.7rem]" aria-hidden="true"></i>
+                    </a>
+                    <div class="flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        (click)="startEditLink(link)"
+                        [attr.aria-label]="'Edit ' + meta(link.platform).label + ' channel'"
+                        class="grid h-8 w-8 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                      >
+                        <i class="pi pi-pencil text-sm" aria-hidden="true"></i>
+                      </button>
+                      <button
+                        type="button"
+                        (click)="confirmArchiveLink(link)"
+                        [attr.aria-label]="'Remove ' + meta(link.platform).label + ' channel'"
+                        class="grid h-8 w-8 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                      >
+                        <i class="pi pi-trash text-sm" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                  </div>
+                }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  </div>
+</div>
