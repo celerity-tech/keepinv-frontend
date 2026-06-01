@@ -11,11 +11,11 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { HttpErrorResponse } from '@angular/common/http';
 import { finalize } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 
+import { httpErrorMessage } from '../../../common/http/http-error-message';
 import { LocationsService } from './services/locations.service';
 import { Location } from './types/location.types';
 
@@ -129,7 +129,8 @@ export class Locations {
           this.addForm.reset({ name: '', code: '' });
           this.addInput()?.nativeElement.focus();
         },
-        error: (error: unknown) => this.addError.set(this.messageFor(error, code)),
+        error: (error: unknown) =>
+          this.addError.set(httpErrorMessage(error, code ? `Code "${code}"` : undefined)),
       });
   }
 
@@ -178,7 +179,8 @@ export class Locations {
           );
           this.editingId.set(null);
         },
-        error: (error: unknown) => this.editError.set(this.messageFor(error, code)),
+        error: (error: unknown) =>
+          this.editError.set(httpErrorMessage(error, code ? `Code "${code}"` : undefined)),
       });
   }
 
@@ -215,7 +217,7 @@ export class Locations {
           this.locations.update((list) => list.filter((item) => item.id !== location.id));
           this.archivingId.set(null);
         },
-        error: (error: unknown) => this.archiveError.set(this.messageFor(error, location.name)),
+        error: (error: unknown) => this.archiveError.set(httpErrorMessage(error)),
       });
   }
 
@@ -242,17 +244,5 @@ export class Locations {
 
   private sortByName(items: Location[]): Location[] {
     return [...items].sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  private messageFor(error: unknown, label: string): string {
-    if (error instanceof HttpErrorResponse) {
-      if (error.status === 409) {
-        return label ? `Code "${label}" is already in use.` : 'That code is already in use.';
-      }
-      if (error.status === 0) {
-        return 'Cannot reach the server. Check your connection and try again.';
-      }
-    }
-    return 'Something went wrong. Try again.';
   }
 }

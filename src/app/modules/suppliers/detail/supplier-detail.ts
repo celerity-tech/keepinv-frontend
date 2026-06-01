@@ -20,7 +20,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { SelectModule } from 'primeng/select';
 
 import { SuppliersService } from '../services/suppliers.service';
-import { httpErrorMessage } from '../utils/error-message';
+import { httpErrorMessage } from '../../../../common/http/http-error-message';
 import {
   SUPPLIER_PLATFORMS,
   PlatformOption,
@@ -85,7 +85,10 @@ export class SupplierDetail {
   protected readonly addingLink = signal(false);
   protected readonly addLinkError = signal<string | null>(null);
   protected readonly addLinkForm = this.formBuilder.nonNullable.group({
-    platform: ['', [Validators.required]],
+    platform: this.formBuilder.control<SupplierPlatform | ''>('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
     url: ['', [Validators.required, Validators.pattern(HTTP_URL), Validators.maxLength(2048)]],
     label: ['', [Validators.maxLength(100)]],
   });
@@ -94,7 +97,10 @@ export class SupplierDetail {
   protected readonly savingLink = signal(false);
   protected readonly linkEditError = signal<string | null>(null);
   protected readonly editLinkForm = this.formBuilder.nonNullable.group({
-    platform: ['', [Validators.required]],
+    platform: this.formBuilder.control<SupplierPlatform | ''>('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
     url: ['', [Validators.required, Validators.pattern(HTTP_URL), Validators.maxLength(2048)]],
     label: ['', [Validators.maxLength(100)]],
   });
@@ -258,11 +264,14 @@ export class SupplierDetail {
     }
 
     const raw = this.addLinkForm.getRawValue();
+    if (!raw.platform) {
+      return;
+    }
     this.addingLink.set(true);
     this.addLinkError.set(null);
     this.service
       .createLink(this.supplier().id, {
-        platform: raw.platform as SupplierPlatform,
+        platform: raw.platform,
         url: raw.url.trim(),
         label: this.optional(raw.label),
       })
@@ -302,11 +311,14 @@ export class SupplierDetail {
     }
 
     const raw = this.editLinkForm.getRawValue();
+    if (!raw.platform) {
+      return;
+    }
     this.savingLink.set(true);
     this.linkEditError.set(null);
     this.service
       .updateLink(this.supplier().id, id, {
-        platform: raw.platform as SupplierPlatform,
+        platform: raw.platform,
         url: raw.url.trim(),
         label: this.optional(raw.label),
       })

@@ -127,6 +127,9 @@ export class Products {
 
   protected applyFilters(): void {
     this.first.set(0);
+    // A new filter may exclude the selected product; drop it so load() re-selects
+    // the top match rather than leaving a product on screen that's off the list.
+    this.selected.set(null);
     this.load();
   }
 
@@ -154,6 +157,13 @@ export class Products {
         next: ({ items, meta }) => {
           this.products.set(items);
           this.total.set(meta.total);
+          // Archiving the last row on a page leaves us past the final page; step
+          // back to the new last page rather than stranding an empty paginator.
+          if (!items.length && meta.total > 0 && this.first() > 0) {
+            this.first.set(Math.max(0, Math.ceil(meta.total / this.rows) - 1) * this.rows);
+            this.load();
+            return;
+          }
           if (this.mode() === 'view' && !this.selected() && items.length) {
             this.selected.set(items[0]);
           }
@@ -196,31 +206,34 @@ export class Products {
 
   protected onCreated(product: Product): void {
     this.mode.set('view');
-    this.selected.set(product);
-    this.hydrateSelected(product.id);
+    // The create response omits the embedded category/supplier/location, so we
+    // never render it directly; select the authoritative nested record once the
+    // hydrate fetch resolves instead of the relation-less write response.
+    this.hydrateSelected(product.id, true);
     // The new row may or may not land on the current page; refetch to stay truthful.
     this.load();
   }
 
   protected onUpdated(updated: Product): void {
-    this.products.update((list) =>
-      list.map((product) => (product.id === updated.id ? updated : product)),
-    );
-    this.selected.set(updated);
+    // The update response omits the embedded relations too; keep the current
+    // (hydrated) record on screen and let the hydrate fetch swap in the refreshed
+    // one, so the list and detail never render a product missing its category.
     this.hydrateSelected(updated.id);
   }
 
   /**
    * Re-fetch the full product after a write. Create/update responses aren't
    * guaranteed to embed the related category/supplier/location the detail pane
-   * shows, so GET /:id gives an authoritative, nested record.
+   * shows, so GET /:id gives an authoritative, nested record. Pass `select` to
+   * adopt the fetched record as the selection (used after a create, where there
+   * is no prior selection to match on).
    */
-  private hydrateSelected(id: string): void {
+  private hydrateSelected(id: string, select = false): void {
     this.service
       .get(id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((product) => {
-        if (this.selected()?.id === id) {
+        if (select || this.selected()?.id === id) {
           this.selected.set(product);
         }
         this.products.update((list) =>

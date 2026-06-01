@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Observable, finalize } from 'rxjs';
+import { Observable, finalize, forkJoin } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -142,30 +142,30 @@ export class ProductForm implements OnInit {
 
   private loadOptions(): void {
     this.optionsLoading.set(true);
+    const product = this.product();
 
-    this.categories
-      .list()
-      .pipe(takeUntilDestroyed(this.destroyRef))
+    // Load the three master-data lists together so optionsLoading reflects all
+    // of them and a single error path covers every failure (a bare subscribe on
+    // suppliers/locations would otherwise throw unhandled and leave the selects
+    // empty with no feedback).
+    forkJoin({
+      categories: this.categories.list(),
+      suppliers: this.suppliers.list(),
+      locations: this.locations.list(),
+    })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.optionsLoading.set(false)),
+      )
       .subscribe({
-        next: (items) =>
-          this.categoryOptions.set(this.mergeCurrent(items, this.product()?.category ?? null)),
-        complete: () => this.optionsLoading.set(false),
-        error: () => this.optionsLoading.set(false),
+        next: ({ categories, suppliers, locations }) => {
+          this.categoryOptions.set(this.mergeCurrent(categories, product?.category ?? null));
+          this.supplierOptions.set(this.mergeCurrent(suppliers, product?.supplier ?? null));
+          this.locationOptions.set(this.mergeCurrent(locations, product?.location ?? null));
+        },
+        error: (error: unknown) =>
+          this.formError.set(httpErrorMessage(error)),
       });
-
-    this.suppliers
-      .list()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((items) =>
-        this.supplierOptions.set(this.mergeCurrent(items, this.product()?.supplier ?? null)),
-      );
-
-    this.locations
-      .list()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((items) =>
-        this.locationOptions.set(this.mergeCurrent(items, this.product()?.location ?? null)),
-      );
   }
 
   /**

@@ -8,7 +8,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { merge } from 'rxjs';
+import { Subject, catchError, filter, map, merge, of, switchMap } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { AutoCompleteModule, AutoCompleteCompleteEvent } from 'primeng/autocomplete';
@@ -65,6 +65,7 @@ export class StockMovements {
   /** Range picker value: [from, to]. */
   protected readonly dateRange = new FormControl<Date[] | null>(null);
   protected readonly productSuggestions = signal<Product[]>([]);
+  private readonly productQuery = new Subject<string>();
 
   protected readonly selected = signal<StockMovement | null>(null);
   protected readonly mode = signal<'record' | 'view'>('record');
@@ -73,9 +74,33 @@ export class StockMovements {
   protected readonly hasFilters = signal(false);
 
   constructor() {
-    merge(this.productFilter.valueChanges, this.typeFilter.valueChanges, this.dateRange.valueChanges)
+    merge(this.productFilter.valueChanges, this.typeFilter.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyFilters());
+
+    // A range picker emits [from, null] on the first click; wait for both ends
+    // (or a full clear) before querying, so picking a start date doesn't fire a
+    // premature single-day load that's immediately replaced once the end is set.
+    this.dateRange.valueChanges
+      .pipe(
+        filter((range) => range == null || (range[0] != null && range[1] != null)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(() => this.applyFilters());
+
+    // Resolve product search through switchMap so a newer query cancels the
+    // in-flight one; out-of-order responses can't clobber fresher suggestions.
+    this.productQuery
+      .pipe(
+        switchMap((query) =>
+          this.products.list({ page: 1, limit: 10, search: query }).pipe(
+            map(({ items }) => items),
+            catchError(() => of<Product[]>([])),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((items) => this.productSuggestions.set(items));
 
     this.load();
   }
@@ -92,6 +117,9 @@ export class StockMovements {
 
   protected applyFilters(): void {
     this.first.set(0);
+    // A new filter may exclude the selected movement; drop it so the detail pane
+    // doesn't show a record that's no longer in the visible ledger.
+    this.selected.set(null);
     this.load();
   }
 
@@ -127,13 +155,7 @@ export class StockMovements {
   }
 
   protected searchProducts(event: AutoCompleteCompleteEvent): void {
-    this.products
-      .list({ page: 1, limit: 10, search: event.query })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: ({ items }) => this.productSuggestions.set(items),
-        error: () => this.productSuggestions.set([]),
-      });
+    this.productQuery.next(event.query);
   }
 
   protected clearFilters(): void {

@@ -55,11 +55,20 @@ export class ProductDetail {
     return { amount, pct };
   });
 
+  /** Id the edit/archive state was last reset for; guards against re-resetting on refresh. */
+  private resetForId: string | null = null;
+
   constructor() {
-    // Selecting a different product drops any open edit/archive state from the
-    // previous one so the pane never shows stale intent.
+    // Selecting a *different* product drops any open edit/archive state so the
+    // pane never shows stale intent. Compare by id, not object identity: a
+    // post-write hydrate hands us a fresh object for the same product, and
+    // resetting on that would cancel an edit the user just reopened.
     effect(() => {
-      this.product();
+      const id = this.product().id;
+      if (id === this.resetForId) {
+        return;
+      }
+      this.resetForId = id;
       this.editing.set(false);
       this.archiving.set(false);
       this.archiveError.set(null);

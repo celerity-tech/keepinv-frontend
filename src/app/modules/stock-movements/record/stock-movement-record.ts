@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Observable, finalize } from 'rxjs';
+import { Observable, Subject, catchError, finalize, map, of, switchMap } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -74,6 +74,7 @@ export class StockMovementRecord implements OnInit {
   protected readonly types: MovementTypeOption[] = [...SELECTABLE_MOVEMENT_TYPES];
 
   protected readonly productSuggestions = signal<Product[]>([]);
+  private readonly productQuery = new Subject<string>();
   protected readonly supplierOptions = signal<NamedRecord[]>([]);
   protected readonly locationOptions = signal<NamedRecord[]>([]);
 
@@ -109,6 +110,20 @@ export class StockMovementRecord implements OnInit {
   ngOnInit(): void {
     this.loadOptions();
 
+    // Resolve product search through switchMap so a newer query cancels the
+    // in-flight one; out-of-order responses can't clobber fresher suggestions.
+    this.productQuery
+      .pipe(
+        switchMap((query) =>
+          this.products.list({ page: 1, limit: 10, search: query }).pipe(
+            map(({ items }) => items),
+            catchError(() => of<Product[]>([])),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((items) => this.productSuggestions.set(items));
+
     // Clear a stale supplier when switching to a type that doesn't use one.
     this.form.controls.type.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -120,13 +135,7 @@ export class StockMovementRecord implements OnInit {
   }
 
   protected searchProducts(event: AutoCompleteCompleteEvent): void {
-    this.products
-      .list({ page: 1, limit: 10, search: event.query })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: ({ items }) => this.productSuggestions.set(items),
-        error: () => this.productSuggestions.set([]),
-      });
+    this.productQuery.next(event.query);
   }
 
   protected record(): void {
