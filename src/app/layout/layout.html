@@ -109,4 +109,18 @@
       <router-outlet />
     </main>
   </div>
+
+  @if (leader()) {
+    <div
+      role="status"
+      class="pointer-events-none fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-2 text-xs text-muted shadow-sm"
+    >
+      <span class="font-medium text-ink">New…</span>
+      <kbd class="rounded border border-line bg-counter px-1 font-sans text-[0.7rem] font-medium text-ink">P</kbd>
+      product
+      <span class="text-muted/50">·</span>
+      <kbd class="rounded border border-line bg-counter px-1 font-sans text-[0.7rem] font-medium text-ink">A</kbd>
+      audit
+    </div>
+  }
 </div>

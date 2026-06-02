@@ -29,12 +29,27 @@ interface NavSection {
   readonly items: readonly NavItem[];
 }
 
+/** How long after pressing `N` the second key is still accepted as a chord. */
+const LEADER_TIMEOUT_MS = 1500;
+
+/**
+ * `N` then one of these keys opens that surface's create flow (via `?new=1`).
+ * Extend by adding an entry, e.g. `m: { path: '/stock-movements' }`.
+ */
+const NEW_SHORTCUTS: Record<string, { readonly path: string }> = {
+  p: { path: '/products' },
+  a: { path: '/inventory-audit' },
+};
+
 @Component({
   selector: 'app-layout',
   imports: [RouterOutlet, RouterLink, MenuModule],
   templateUrl: './layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '(document:keydown.escape)': 'closeMobile()' },
+  host: {
+    '(document:keydown.escape)': 'closeMobile()',
+    '(document:keydown)': 'onGlobalKeydown($event)',
+  },
 })
 export class Layout {
   private readonly router = inject(Router);
@@ -48,6 +63,7 @@ export class Layout {
         { label: 'Point of Sale', icon: 'pi pi-shopping-cart' },
         { label: 'Sales', icon: 'pi pi-chart-line' },
         { label: 'Stock Movements', icon: 'pi pi-arrows-v', path: 'stock-movements' },
+        { label: 'Inventory Audit', icon: 'pi pi-check-square', path: 'inventory-audit' },
       ],
     },
     {
@@ -64,6 +80,10 @@ export class Layout {
       items: [{ label: 'Settings', icon: 'pi pi-cog' }],
     },
   ];
+
+  /** Leader-chord state: true while waiting for the second key after `N`. */
+  protected readonly leader = signal(false);
+  private leaderTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Desktop rail collapse. */
   protected readonly collapsed = signal(false);
@@ -140,6 +160,12 @@ export class Layout {
       query.addEventListener('change', sync);
       this.destroyRef.onDestroy(() => query.removeEventListener('change', sync));
     });
+
+    this.destroyRef.onDestroy(() => {
+      if (this.leaderTimer) {
+        clearTimeout(this.leaderTimer);
+      }
+    });
   }
 
   protected toggleNav(): void {
@@ -152,6 +178,66 @@ export class Layout {
 
   protected closeMobile(): void {
     this.mobileOpen.set(false);
+  }
+
+  /**
+   * App-wide "new" leader chord: press `N`, then an entity key (`P` product,
+   * `A` audit). Suppressed while typing in a field or while a scanner streams into
+   * an input, and ignored when a modifier is held so browser shortcuts still work.
+   */
+  protected onGlobalKeydown(event: KeyboardEvent): void {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+    if (this.isEditableTarget(event.target)) {
+      this.clearLeader();
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+
+    if (this.leader()) {
+      const destination = NEW_SHORTCUTS[key];
+      this.clearLeader();
+      if (destination) {
+        event.preventDefault();
+        this.closeMobile();
+        void this.router.navigate([destination.path], { queryParams: { new: 1 } });
+      }
+      return;
+    }
+
+    if (key === 'n') {
+      this.leader.set(true);
+      if (this.leaderTimer) {
+        clearTimeout(this.leaderTimer);
+      }
+      this.leaderTimer = setTimeout(() => this.leader.set(false), LEADER_TIMEOUT_MS);
+    }
+  }
+
+  private clearLeader(): void {
+    if (this.leaderTimer) {
+      clearTimeout(this.leaderTimer);
+      this.leaderTimer = null;
+    }
+    if (this.leader()) {
+      this.leader.set(false);
+    }
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    const tag = target.tagName;
+    return (
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      target.isContentEditable ||
+      target.closest('[contenteditable="true"]') !== null
+    );
   }
 
   protected isActive(item: NavItem): boolean {

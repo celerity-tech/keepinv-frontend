@@ -1,0 +1,215 @@
+@if (mode() === 'session') {
+  <app-audit-session
+    [initialReport]="resumeReport()"
+    (completed)="onSessionCompleted($event)"
+    (cancelled)="onSessionCancelled()"
+    (exited)="onSessionExited($event)"
+  />
+} @else {
+  <div class="mx-auto max-w-7xl">
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+      <p class="max-w-prose text-sm text-muted">
+        Check what's physically at a location against what the catalog expects. Start an audit, sweep
+        your RFID reader or scan tags, and every item lands as verified, misplaced, or unknown, with
+        anything missing surfaced as you go.
+      </p>
+      <p-button
+        type="button"
+        label="Start audit"
+        icon="pi pi-plus"
+        (onClick)="startAudit()"
+        styleClass="shrink-0 font-medium"
+      />
+    </div>
+
+    @if (loading() && audits().length === 0) {
+      <div class="mt-8 rounded-lg border border-line bg-counter p-4">
+        @for (placeholder of [0, 1, 2, 3, 4]; track placeholder) {
+          <div class="flex items-center justify-between gap-3 border-b border-line py-3 last:border-0">
+            <div class="h-3.5 w-48 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+            <div class="h-3.5 w-20 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+          </div>
+        }
+      </div>
+    } @else if (loadError() && audits().length === 0) {
+      <div class="mt-8 rounded-lg border border-line bg-counter px-6 py-12 text-center">
+        <p class="text-sm font-medium text-ink">Couldn't load audits</p>
+        <p class="mx-auto mt-1 max-w-sm text-sm text-muted">{{ loadError() }}</p>
+        <p-button type="button" label="Retry" [text]="true" (onClick)="load()" styleClass="mt-3 font-medium" />
+      </div>
+    } @else if (isEmpty()) {
+      <div class="mt-8 rounded-lg border border-dashed border-line px-6 py-16 text-center">
+        <span class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-panel text-muted">
+          <i class="pi pi-qrcode text-xl" aria-hidden="true"></i>
+        </span>
+        <p class="mt-3 text-sm font-medium text-ink">No audits yet</p>
+        <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+          Run your first audit to reconcile a location against the catalog. It takes seconds with a
+          scanner.
+        </p>
+        <p-button
+          type="button"
+          label="Start audit"
+          icon="pi pi-plus"
+          (onClick)="startAudit()"
+          styleClass="mt-4 font-medium"
+        />
+      </div>
+    } @else {
+      <!-- Filter -->
+      <div class="mt-6 flex flex-wrap items-center gap-2">
+        <p-select
+          [formControl]="locationFilter"
+          [options]="locationOptions()"
+          optionLabel="name"
+          optionValue="id"
+          [filter]="true"
+          filterBy="name"
+          [showClear]="true"
+          placeholder="All locations"
+          appendTo="body"
+          ariaLabel="Filter by location"
+          styleClass="text-sm"
+        />
+        @if (hasFilters()) {
+          <p-button
+            type="button"
+            label="Clear"
+            icon="pi pi-times"
+            [text]="true"
+            (onClick)="clearFilters()"
+            styleClass="text-muted"
+          />
+        }
+      </div>
+
+      <!-- Two-pane: history + detail -->
+      <div class="mt-4 lg:grid lg:grid-cols-[26rem_minmax(0,1fr)] lg:items-start lg:gap-5">
+        <!-- History -->
+        <section
+          aria-label="Audit history"
+          class="overflow-hidden rounded-lg border border-line bg-counter lg:block"
+          [class.hidden]="paneOpenMobile()"
+        >
+          <p-table
+            [value]="audits()"
+            dataKey="id"
+            [lazy]="true"
+            (onLazyLoad)="onLazyLoad($event)"
+            [paginator]="total() > rows"
+            [rows]="rows"
+            [first]="first()"
+            [totalRecords]="total()"
+            [loading]="loading()"
+            selectionMode="single"
+            [selection]="selectedRow()"
+            (selectionChange)="onSelectionChange($event)"
+            [rowHover]="true"
+            styleClass="text-sm"
+          >
+            <ng-template pTemplate="body" let-audit>
+              <tr [pSelectableRow]="audit" class="cursor-pointer">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-3">
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate font-medium text-ink">{{ audit.location?.name || 'Location' }}</p>
+                      <p class="truncate text-xs tabular-nums text-muted">
+                        {{ audit.auditNo }} · {{ audit.startedAt | date: 'MMM d, h:mm a' }}
+                      </p>
+                    </div>
+                    <div class="shrink-0 text-right">
+                      <span
+                        class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+                        [class]="statusChip(audit.status).classes"
+                      >
+                        {{ statusChip(audit.status).label }}
+                      </span>
+                      @if (audit.summary; as s) {
+                        <p class="mt-1 text-xs tabular-nums text-muted">
+                          <span class="text-success">{{ s.matchedCount }}</span> verified ·
+                          <span class="text-danger">{{ s.missingCount }}</span> missing
+                        </p>
+                      }
+                    </div>
+                    <i class="pi pi-angle-right shrink-0 text-muted lg:hidden" aria-hidden="true"></i>
+                  </div>
+                </td>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="emptymessage">
+              <tr>
+                <td class="px-4 py-10 text-center text-sm text-muted">No audits match this filter.</td>
+              </tr>
+            </ng-template>
+          </p-table>
+        </section>
+
+        <!-- Detail -->
+        <section
+          aria-label="Audit detail"
+          class="overflow-hidden rounded-lg border border-line bg-counter lg:block lg:min-h-[32rem]"
+          [class.hidden]="!paneOpenMobile()"
+        >
+          <div class="border-b border-line px-3 py-2 lg:hidden">
+            <button
+              type="button"
+              (click)="backToList()"
+              class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+            >
+              <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+              All audits
+            </button>
+          </div>
+
+          @if (detailLoading()) {
+            <div class="px-5 py-5">
+              <div class="h-5 w-40 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+              <div class="mt-5 h-16 animate-pulse rounded-lg bg-line motion-reduce:animate-none"></div>
+              <div class="mt-5 space-y-2">
+                @for (placeholder of [0, 1, 2, 3]; track placeholder) {
+                  <div class="h-10 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+                }
+              </div>
+            </div>
+          } @else if (detailError()) {
+            <div class="grid h-full place-items-center px-6 py-20 text-center">
+              <div>
+                <p class="text-sm font-medium text-ink">Couldn't load this audit</p>
+                <p class="mx-auto mt-1 max-w-xs text-sm text-muted">{{ detailError() }}</p>
+                <p-button type="button" label="Retry" [text]="true" (onClick)="retryDetail()" styleClass="mt-3 font-medium" />
+              </div>
+            </div>
+          } @else if (selectedReport(); as report) {
+            @if (report.status === 'IN_PROGRESS') {
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-panel px-5 py-3">
+                <p class="text-sm text-muted">This audit is still in progress.</p>
+                <p-button
+                  type="button"
+                  label="Continue audit"
+                  icon="pi pi-play"
+                  (onClick)="resumeAudit(report)"
+                  styleClass="font-medium"
+                />
+              </div>
+            }
+            <app-audit-detail [report]="report" />
+          } @else {
+            <div class="grid h-full place-items-center px-6 py-20 text-center">
+              <div>
+                <span class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-panel text-muted">
+                  <i class="pi pi-arrow-left text-xl" aria-hidden="true"></i>
+                </span>
+                <p class="mt-3 text-sm font-medium text-ink">Select an audit</p>
+                <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+                  Pick an audit from the list to see its breakdown of verified, missing, misplaced, and
+                  untracked assets.
+                </p>
+              </div>
+            </div>
+          }
+        </section>
+      </div>
+    }
+  </div>
+}

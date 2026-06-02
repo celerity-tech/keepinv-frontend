@@ -36,6 +36,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./modules/stock-movements/stock-movements').then((m) => m.StockMovements),
       },
+      {
+        path: 'inventory-audit',
+        loadComponent: () =>
+          import('./modules/inventory-audit/inventory-audit').then((m) => m.InventoryAudit),
+      },
     ],
   },
 ];

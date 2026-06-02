@@ -20,5 +20,14 @@
   --color-field: oklch(62% 0.013 75); /* input borders (>=3:1 non-text contrast) */
   --color-signal: oklch(72% 0.15 75); /* amber signal */
   --color-signal-hover: oklch(66% 0.155 75);
-  --color-danger: oklch(52% 0.17 27); /* error text/tint */
+  --color-danger: oklch(52% 0.17 27); /* error text/tint; audit "missing" */
+
+  /*
+   * Semantic status hues for stateful outcomes (e.g. the audit buckets). Kept at
+   * danger's lightness so they read as text on the counter surface and tint
+   * cleanly at /10. None is amber: the One Signal Rule reserves amber for the
+   * primary action, focus, and selection, so a status badge never competes with it.
+   */
+  --color-success: oklch(53% 0.13 150); /* verified / matched */
+  --color-info: oklch(54% 0.13 264); /* misplaced (relocate, not lost) */
 }

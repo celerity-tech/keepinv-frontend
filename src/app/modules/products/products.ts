@@ -7,6 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { DecimalPipe } from '@angular/common';
 import { debounceTime, distinctUntilChanged, finalize, merge } from 'rxjs';
@@ -58,6 +59,8 @@ export class Products {
   private readonly service = inject(ProductsService);
   private readonly categoriesService = inject(CategoriesService);
   private readonly locationsService = inject(LocationsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly products = signal<Product[]>([]);
@@ -106,6 +109,21 @@ export class Products {
     )
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyFilters());
+
+    // `?new=1` (from the global "new product" shortcut) opens the create form, then
+    // strips the param so a refresh or back-nav doesn't reopen it.
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        if (params.get('new') !== null) {
+          this.startCreate();
+          void this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: {},
+            replaceUrl: true,
+          });
+        }
+      });
 
     this.load();
   }
