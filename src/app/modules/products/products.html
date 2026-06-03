@@ -212,6 +212,7 @@
             [product]="product"
             (updated)="onUpdated($event)"
             (archived)="onArchived($event)"
+            (unitsChanged)="onUnitsChanged()"
           />
         } @else {
           <div class="grid h-full place-items-center px-6 py-20 text-center">

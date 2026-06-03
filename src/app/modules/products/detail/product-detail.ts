@@ -8,6 +8,7 @@ import {
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
@@ -19,6 +20,11 @@ import { Product, stockState } from '../types/product.types';
 import { httpErrorMessage } from '../../../../common/http/http-error-message';
 import { MoneyPipe } from '../utils/money.pipe';
 import { ProductForm } from '../form/product-form';
+import { UnitsRoster } from '../units/units-roster';
+import { CommissionSession } from '../units/commission-session';
+
+/** Which view the detail body shows for a serialized product. */
+type DetailTab = 'overview' | 'units';
 
 /**
  * Detail pane for one product: an at-a-glance stock and price summary, the full
@@ -27,7 +33,15 @@ import { ProductForm } from '../form/product-form';
  */
 @Component({
   selector: 'app-product-detail',
-  imports: [ButtonModule, DatePipe, DecimalPipe, MoneyPipe, ProductForm],
+  imports: [
+    ButtonModule,
+    DatePipe,
+    DecimalPipe,
+    MoneyPipe,
+    ProductForm,
+    UnitsRoster,
+    CommissionSession,
+  ],
   templateUrl: './product-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown.escape)': 'onEscape()' },
@@ -39,13 +53,21 @@ export class ProductDetail {
   readonly product = input.required<Product>();
   readonly updated = output<Product>();
   readonly archived = output<string>();
+  /** A unit mutation may have shifted on-hand; the catalog should re-hydrate this product. */
+  readonly unitsChanged = output<void>();
+
+  private readonly roster = viewChild(UnitsRoster);
 
   protected readonly editing = signal(false);
   protected readonly archiving = signal(false);
   protected readonly archiveBusy = signal(false);
   protected readonly archiveError = signal<string | null>(null);
 
+  protected readonly tab = signal<DetailTab>('overview');
+  protected readonly commissioning = signal(false);
+
   protected readonly stock = computed(() => stockState(this.product()));
+  protected readonly isSerialized = computed(() => this.product().isSerialized);
   protected readonly margin = computed(() => {
     const product = this.product();
     const selling = Number(product.sellingPrice);
@@ -72,7 +94,23 @@ export class ProductDetail {
       this.editing.set(false);
       this.archiving.set(false);
       this.archiveError.set(null);
+      this.tab.set('overview');
+      this.commissioning.set(false);
     });
+  }
+
+  protected launchCommission(): void {
+    this.commissioning.set(true);
+  }
+
+  protected onCommissionExited(): void {
+    this.commissioning.set(false);
+  }
+
+  /** A register batch committed: refresh the roster and ask the catalog to re-hydrate on-hand. */
+  protected onCommissioned(): void {
+    this.roster()?.reload();
+    this.unitsChanged.emit();
   }
 
   protected startEdit(): void {

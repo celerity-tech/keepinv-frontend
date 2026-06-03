@@ -12,6 +12,7 @@ import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router
 import { filter, map } from 'rxjs';
 import { MenuModule } from 'primeng/menu';
 import { MenuItem } from 'primeng/api';
+import { Tooltip } from 'primeng/tooltip';
 
 import { AuthService } from '../modules/auth/services/auth.service';
 
@@ -21,6 +22,11 @@ interface NavItem {
   readonly icon: string;
   /** Absent path means the destination is not built yet; the item renders disabled. */
   readonly path?: string;
+  /**
+   * Second key of the `N`-leader create chord for this surface, if any. Must match a
+   * key in {@link NEW_SHORTCUTS}; surfaced as a hover tooltip (e.g. `verb · N then P`).
+   */
+  readonly newShortcut?: { readonly key: string; readonly verb: string };
 }
 
 interface NavSection {
@@ -43,7 +49,7 @@ const NEW_SHORTCUTS: Record<string, { readonly path: string }> = {
 
 @Component({
   selector: 'app-layout',
-  imports: [RouterOutlet, RouterLink, MenuModule],
+  imports: [RouterOutlet, RouterLink, MenuModule, Tooltip],
   templateUrl: './layout.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -63,15 +69,20 @@ export class Layout {
         { label: 'Point of Sale', icon: 'pi pi-shopping-cart' },
         { label: 'Sales', icon: 'pi pi-chart-line' },
         { label: 'Stock Movements', icon: 'pi pi-arrows-v', path: 'stock-movements' },
-        { label: 'Inventory Audit', icon: 'pi pi-check-square', path: 'inventory-audit' },
+        {
+          label: 'Inventory Audit',
+          icon: 'pi pi-check-square',
+          path: 'inventory-audit',
+          newShortcut: { key: 'a', verb: 'New audit' },
+        },
       ],
     },
     {
       label: 'Catalog',
       items: [
-        { label: 'Products', icon: 'pi pi-box', path: 'products' },
-        { label: 'Categories', icon: 'pi pi-th-large', path: 'categories' },
+        { label: 'Products', icon: 'pi pi-box', path: 'products', newShortcut: { key: 'p', verb: 'New product' } },
         { label: 'Suppliers', icon: 'pi pi-truck', path: 'suppliers' },
+        { label: 'Categories', icon: 'pi pi-th-large', path: 'categories' },
         { label: 'Locations', icon: 'pi pi-map-marker', path: 'locations' },
       ],
     },
@@ -265,6 +276,20 @@ export class Layout {
 
   protected labelClasses(): string {
     return this.collapsed() ? 'lg:hidden' : '';
+  }
+
+  /**
+   * Hover tooltip text. Expanded rail teaches the create chord on shortcut-bearing
+   * items (`verb · N then P`); the collapsed icon-only rail also names the item.
+   * Empty string disables the tooltip (PrimeNG renders nothing).
+   */
+  protected tooltipFor(item: NavItem): string {
+    const shortcut = item.newShortcut;
+    const chord = shortcut ? `N then ${shortcut.key.toUpperCase()}` : '';
+    if (this.collapsed()) {
+      return shortcut ? `${item.label} · ${chord}` : item.label;
+    }
+    return shortcut ? `${shortcut.verb} · ${chord}` : '';
   }
 
   /**

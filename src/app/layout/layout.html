@@ -40,7 +40,8 @@
                     [class]="navLinkClasses(active)"
                     [attr.aria-label]="item.label"
                     [attr.aria-current]="active ? 'page' : null"
-                    [attr.title]="collapsed() ? item.label : null"
+                    [pTooltip]="tooltipFor(item)"
+                    tooltipPosition="right"
                   >
                     <i [class]="item.icon" class="shrink-0 text-xl" [class.text-signal]="active" aria-hidden="true"></i>
                     <span [class]="labelClasses()">{{ item.label }}</span>
@@ -49,7 +50,8 @@
                   <span
                     [class]="disabledItemClasses()"
                     aria-disabled="true"
-                    [attr.title]="collapsed() ? item.label + ' (coming soon)' : null"
+                    [pTooltip]="collapsed() ? item.label + ' (coming soon)' : ''"
+                    tooltipPosition="right"
                   >
                     <i [class]="item.icon" class="shrink-0 text-xl" aria-hidden="true"></i>
                     <span [class]="labelClasses()">{{ item.label }}</span>

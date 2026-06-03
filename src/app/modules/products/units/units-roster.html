@@ -1,0 +1,423 @@
+<div class="flex flex-col">
+  <!-- Tab toolbar: summary + register -->
+  <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold tracking-tight text-ink">Units</h3>
+      <p class="mt-0.5 text-xs text-muted">
+        Each physical, serialized unit of this product and where it stands.
+      </p>
+    </div>
+    <p-button
+      type="button"
+      label="Register units"
+      icon="pi pi-bolt"
+      (onClick)="commission.emit()"
+      styleClass="shrink-0 font-medium"
+    />
+  </div>
+
+  <div class="px-5 pb-5">
+    @if (loading() && units().length === 0) {
+      <!-- Initial load -->
+      <div class="rounded-lg border border-line bg-counter p-4">
+        @for (placeholder of [0, 1, 2, 3, 4]; track placeholder) {
+          <div class="flex items-center justify-between gap-3 border-b border-line py-3 last:border-0">
+            <div class="h-3.5 w-40 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+            <div class="h-3.5 w-16 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+          </div>
+        }
+      </div>
+    } @else if (loadError() && units().length === 0) {
+      <div class="rounded-lg border border-line bg-counter px-6 py-12 text-center">
+        <p class="text-sm font-medium text-ink">Couldn't load units</p>
+        <p class="mx-auto mt-1 max-w-sm text-sm text-muted">{{ loadError() }}</p>
+        <p-button type="button" label="Retry" [text]="true" (onClick)="load()" styleClass="mt-3 font-medium" />
+      </div>
+    } @else if (isEmpty()) {
+      <!-- Serialized, but nothing registered yet -->
+      <div class="rounded-lg border border-dashed border-line px-6 py-16 text-center">
+        <span class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-panel text-muted">
+          <i class="pi pi-wifi text-xl" aria-hidden="true"></i>
+        </span>
+        <p class="mt-3 text-sm font-medium text-ink">No units registered yet</p>
+        <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+          Sweep RFID tags to bring this product's stock into the system. Each unit is tracked on its
+          own from here on.
+        </p>
+        <p-button
+          type="button"
+          label="Register units"
+          icon="pi pi-bolt"
+          (onClick)="commission.emit()"
+          styleClass="mt-4 font-medium"
+        />
+      </div>
+    } @else {
+      <!-- Filters: status chips + search -->
+      <div class="flex flex-col gap-2.5">
+        <div class="-mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-0.5" role="group" aria-label="Filter units by status">
+          @for (chip of chips; track chip.label) {
+            <button
+              type="button"
+              (click)="setFilter(chip.value)"
+              [attr.aria-pressed]="statusFilter() === chip.value"
+              class="inline-flex shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+              [class]="statusFilter() === chip.value ? 'bg-ink text-counter' : 'text-muted hover:bg-line/60 hover:text-ink'"
+            >
+              {{ chip.label }}
+            </button>
+          }
+        </div>
+        <div class="relative">
+          <label for="unit-search" class="sr-only">Search units</label>
+          <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted" aria-hidden="true"></i>
+          <input
+            pInputText
+            id="unit-search"
+            type="search"
+            [formControl]="searchControl"
+            placeholder="Search or scan RFID, serial, asset tag…"
+            autocomplete="off"
+            class="w-full pl-9 text-sm tabular-nums"
+          />
+        </div>
+      </div>
+
+      <!-- Roster -->
+      <div class="mt-3 overflow-hidden rounded-lg border border-line bg-counter">
+        <p-table
+          [value]="units()"
+          dataKey="id"
+          [lazy]="true"
+          (onLazyLoad)="onLazyLoad($event)"
+          [paginator]="total() > rows"
+          [rows]="rows"
+          [first]="first()"
+          [totalRecords]="total()"
+          [loading]="loading()"
+          styleClass="text-sm"
+        >
+          <ng-template pTemplate="header">
+            <tr>
+              <th scope="col" class="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                Identifier
+              </th>
+              <th scope="col" class="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                Status
+              </th>
+              <th scope="col" class="hidden px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted sm:table-cell">
+                Location
+              </th>
+              <th scope="col" class="px-4 py-2.5">
+                <span class="sr-only">Actions</span>
+              </th>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-unit>
+            <tr>
+              <td class="px-4 py-3 align-top">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-1.5 truncate font-medium tabular-nums text-ink">
+                    <i [class]="primaryIdentifier(unit).icon" class="shrink-0 text-xs text-muted" aria-hidden="true"></i>
+                    {{ primaryIdentifier(unit).value }}
+                  </p>
+                  @if (secondaryIdentifiers(unit).length) {
+                    <p class="mt-0.5 truncate text-xs tabular-nums text-muted">
+                      @for (part of secondaryIdentifiers(unit); track part.label) {
+                        <span>{{ part.label }} {{ part.value }}</span>
+                        @if (!$last) {<span> · </span>}
+                      }
+                    </p>
+                  }
+                  <p class="mt-0.5 text-xs text-muted sm:hidden">
+                    {{ unit.location?.name || 'No location' }}
+                  </p>
+                </div>
+              </td>
+              <td class="px-4 py-3 align-top">
+                <app-product-unit-status-badge [status]="unit.status" />
+              </td>
+              <td class="hidden px-4 py-3 align-top sm:table-cell">
+                <span class="text-sm" [class.text-ink]="unit.location" [class.text-muted]="!unit.location">
+                  {{ unit.location?.name || 'No location' }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-right align-top">
+                <button
+                  type="button"
+                  (click)="openActions(unit, $event, actionsPop)"
+                  [attr.aria-label]="'Actions for unit ' + primaryIdentifier(unit).value"
+                  class="grid h-8 w-8 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                >
+                  <i class="pi pi-ellipsis-h text-base" aria-hidden="true"></i>
+                </button>
+              </td>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="emptymessage">
+            <tr>
+              <td colspan="4" class="px-4 py-10 text-center text-sm text-muted">
+                No units match these filters.
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+    }
+  </div>
+</div>
+
+<!-- Single actions overlay: content switches by view, so one row owns one overlay. -->
+<p-popover #actionsPop appendTo="body" (onHide)="actionView.set('menu')">
+  @if (actionUnit(); as unit) {
+    <div class="w-80 max-w-[calc(100vw-2rem)]">
+      @switch (actionView()) {
+        @case ('menu') {
+          <div class="px-1 py-0.5">
+            <p class="truncate px-2 pb-2 text-xs tabular-nums text-muted">
+              {{ primaryIdentifier(unit).value }}
+            </p>
+            <div class="flex flex-col">
+              @if (canWriteTag(unit.status)) {
+                <button type="button" (click)="showWriteTag()" class="flex items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm text-ink outline-none transition-colors hover:bg-line/60 focus-visible:bg-line/60">
+                  <i class="pi pi-wifi text-sm text-muted" aria-hidden="true"></i>
+                  Write RFID tag
+                </button>
+              }
+              <button type="button" (click)="showStatus()" class="flex items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm text-ink outline-none transition-colors hover:bg-line/60 focus-visible:bg-line/60">
+                <i class="pi pi-sync text-sm text-muted" aria-hidden="true"></i>
+                Change status
+              </button>
+              <button type="button" (click)="showEdit()" class="flex items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm text-ink outline-none transition-colors hover:bg-line/60 focus-visible:bg-line/60">
+                <i class="pi pi-pencil text-sm text-muted" aria-hidden="true"></i>
+                Edit identifiers
+              </button>
+              <button type="button" (click)="showRetire()" class="flex items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm text-danger outline-none transition-colors hover:bg-danger/10 focus-visible:bg-danger/10">
+                <i class="pi pi-ban text-sm" aria-hidden="true"></i>
+                Retire unit
+              </button>
+            </div>
+          </div>
+        }
+
+        @case ('writeTag') {
+          <div>
+            <div class="flex items-center gap-2">
+              <button type="button" (click)="actionView.set('menu')" aria-label="Back to actions" class="grid h-7 w-7 place-items-center rounded-md text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal">
+                <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+              </button>
+              <h4 class="text-sm font-semibold text-ink">Write RFID tag</h4>
+            </div>
+            <p class="mt-2 text-xs text-muted">Scan the new tag or type its EPC. It replaces any tag now on the unit.</p>
+            <input
+              pInputText
+              type="text"
+              [formControl]="writeTagControl"
+              (keydown.enter)="$event.preventDefault(); submitWriteTag(actionsPop)"
+              placeholder="Scan or type EPC…"
+              autocomplete="off"
+              spellcheck="false"
+              class="mt-2 w-full text-sm tabular-nums"
+            />
+            @if (actionError()) {
+              <p role="alert" class="mt-2 text-xs text-danger">{{ actionError() }}</p>
+            }
+            <div class="mt-3 flex justify-end gap-1.5">
+              <p-button type="button" label="Cancel" [text]="true" (onClick)="actionsPop.hide()" styleClass="text-muted" />
+              <p-button
+                type="button"
+                [label]="actionBusy() ? 'Saving…' : 'Write tag'"
+                [loading]="actionBusy()"
+                [disabled]="actionBusy() || !writeTagControl.value.trim()"
+                (onClick)="submitWriteTag(actionsPop)"
+                styleClass="font-medium"
+              />
+            </div>
+          </div>
+        }
+
+        @case ('status') {
+          <div>
+            <div class="flex items-center gap-2">
+              <button type="button" (click)="actionView.set('menu')" aria-label="Back to actions" class="grid h-7 w-7 place-items-center rounded-md text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal">
+                <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+              </button>
+              <h4 class="text-sm font-semibold text-ink">Change status</h4>
+            </div>
+
+            <div class="mt-3 flex flex-col gap-1.5">
+              <label for="unit-status" class="text-xs font-medium text-ink">New status</label>
+              <p-select
+                inputId="unit-status"
+                [options]="statusOptions()"
+                optionLabel="label"
+                optionValue="value"
+                [ngModel]="targetStatus()"
+                (onChange)="onTargetStatus($event.value)"
+                placeholder="Choose a status"
+                appendTo="body"
+                styleClass="w-full text-sm"
+              />
+            </div>
+
+            @if (statusShowsLocation()) {
+              <div class="mt-3 flex flex-col gap-1.5">
+                <label for="unit-status-location" class="text-xs font-medium text-ink">
+                  Location
+                  @if (statusNeedsLocation()) {<span class="text-danger">*</span>}
+                </label>
+                <p-select
+                  inputId="unit-status-location"
+                  [options]="locationOptions()"
+                  optionLabel="name"
+                  optionValue="id"
+                  [filter]="true"
+                  filterBy="name"
+                  [showClear]="!statusNeedsLocation()"
+                  [ngModel]="statusLocationId()"
+                  (onChange)="statusLocationId.set($event.value)"
+                  [placeholder]="unit.location?.name || 'Choose a location'"
+                  appendTo="body"
+                  styleClass="w-full text-sm"
+                />
+              </div>
+            }
+
+            @if (targetStatus()) {
+              <p class="mt-3 inline-flex items-center gap-1.5 text-xs"
+                 [class.text-danger]="statusDelta() < 0"
+                 [class.text-success]="statusDelta() > 0"
+                 [class.text-muted]="statusDelta() === 0">
+                <i class="pi" [class.pi-arrow-down]="statusDelta() < 0" [class.pi-arrow-up]="statusDelta() > 0" [class.pi-minus]="statusDelta() === 0" class="text-[0.65rem]" aria-hidden="true"></i>
+                @switch (statusDelta()) {
+                  @case (-1) { Removes 1 from on-hand stock. }
+                  @case (1) { Adds 1 back to on-hand stock. }
+                  @default { No change to on-hand stock. }
+                }
+              </p>
+              @if (statusClearsLocation()) {
+                <p class="mt-1 text-xs text-muted">The unit's location will be cleared.</p>
+              }
+            }
+
+            <div class="mt-3 flex flex-col gap-1.5">
+              <label for="unit-status-note" class="text-xs font-medium text-ink">Note <span class="font-normal text-muted">(optional)</span></label>
+              <input pInputText id="unit-status-note" type="text" [formControl]="statusNote" maxlength="255" placeholder="Reason or reference" autocomplete="off" class="w-full text-sm" />
+            </div>
+
+            @if (actionError()) {
+              <p role="alert" class="mt-2 text-xs text-danger">{{ actionError() }}</p>
+            }
+            <div class="mt-3 flex justify-end gap-1.5">
+              <p-button type="button" label="Cancel" [text]="true" (onClick)="actionsPop.hide()" styleClass="text-muted" />
+              <p-button
+                type="button"
+                [label]="actionBusy() ? 'Saving…' : 'Apply'"
+                [loading]="actionBusy()"
+                [disabled]="actionBusy() || !targetStatus()"
+                (onClick)="submitStatus(actionsPop)"
+                styleClass="font-medium"
+              />
+            </div>
+          </div>
+        }
+
+        @case ('edit') {
+          <div>
+            <div class="flex items-center gap-2">
+              <button type="button" (click)="actionView.set('menu')" aria-label="Back to actions" class="grid h-7 w-7 place-items-center rounded-md text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal">
+                <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+              </button>
+              <h4 class="text-sm font-semibold text-ink">Edit identifiers</h4>
+            </div>
+            <p class="mt-2 text-xs text-muted">Keep at least one identifier. Leave a field empty to clear it.</p>
+
+            <div class="mt-3 flex flex-col gap-2.5">
+              <div class="flex flex-col gap-1.5">
+                <label for="unit-edit-rfid" class="text-xs font-medium text-ink">RFID tag</label>
+                <input pInputText id="unit-edit-rfid" type="text" [formControl]="editRfidTag" maxlength="128" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="unit-edit-serial" class="text-xs font-medium text-ink">Serial number</label>
+                <input pInputText id="unit-edit-serial" type="text" [formControl]="editSerialNumber" maxlength="64" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="unit-edit-asset" class="text-xs font-medium text-ink">Asset tag</label>
+                <input pInputText id="unit-edit-asset" type="text" [formControl]="editAssetTag" maxlength="64" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label for="unit-edit-location" class="text-xs font-medium text-ink">Location</label>
+                <p-select
+                  inputId="unit-edit-location"
+                  [options]="locationOptions()"
+                  optionLabel="name"
+                  optionValue="id"
+                  [filter]="true"
+                  filterBy="name"
+                  [showClear]="true"
+                  [ngModel]="editLocationId()"
+                  (onChange)="editLocationId.set($event.value)"
+                  placeholder="No location"
+                  appendTo="body"
+                  styleClass="w-full text-sm"
+                />
+              </div>
+            </div>
+
+            @if (!editHasIdentifier()) {
+              <p class="mt-2 text-xs text-danger">Keep at least one identifier.</p>
+            }
+            @if (actionError()) {
+              <p role="alert" class="mt-2 text-xs text-danger">{{ actionError() }}</p>
+            }
+            <div class="mt-3 flex justify-end gap-1.5">
+              <p-button type="button" label="Cancel" [text]="true" (onClick)="actionsPop.hide()" styleClass="text-muted" />
+              <p-button
+                type="button"
+                [label]="actionBusy() ? 'Saving…' : 'Save changes'"
+                [loading]="actionBusy()"
+                [disabled]="actionBusy() || !editHasIdentifier()"
+                (onClick)="submitEdit(actionsPop)"
+                styleClass="font-medium"
+              />
+            </div>
+          </div>
+        }
+
+        @case ('retire') {
+          <div>
+            <div class="flex items-center gap-2">
+              <button type="button" (click)="actionView.set('menu')" aria-label="Back to actions" class="grid h-7 w-7 place-items-center rounded-md text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal">
+                <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+              </button>
+              <h4 class="text-sm font-semibold text-ink">Retire unit</h4>
+            </div>
+            <p class="mt-2 text-sm text-muted">
+              Marks this unit as lost and removes it from on-hand stock. Its history stays intact. You
+              can bring it back later with a status change.
+            </p>
+            <div class="mt-3 flex flex-col gap-1.5">
+              <label for="unit-retire-note" class="text-xs font-medium text-ink">Note <span class="font-normal text-muted">(optional)</span></label>
+              <input pInputText id="unit-retire-note" type="text" [formControl]="retireNote" maxlength="255" placeholder="Reason or reference" autocomplete="off" class="w-full text-sm" />
+            </div>
+            @if (actionError()) {
+              <p role="alert" class="mt-2 text-xs text-danger">{{ actionError() }}</p>
+            }
+            <div class="mt-3 flex justify-end gap-1.5">
+              <p-button type="button" label="Cancel" [text]="true" (onClick)="actionsPop.hide()" styleClass="text-muted" />
+              <p-button
+                type="button"
+                severity="danger"
+                [label]="actionBusy() ? 'Retiring…' : 'Retire unit'"
+                [loading]="actionBusy()"
+                [disabled]="actionBusy()"
+                (onClick)="submitRetire(actionsPop)"
+                styleClass="font-medium"
+              />
+            </div>
+          </div>
+        }
+      }
+    </div>
+  }
+</p-popover>

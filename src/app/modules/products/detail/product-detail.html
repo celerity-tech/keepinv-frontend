@@ -6,40 +6,69 @@
       (cancelled)="editing.set(false)"
     />
   } @else {
-    <!-- Header: identity + actions -->
-    <div class="flex items-start gap-3 border-b border-line px-5 py-4">
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-lg font-semibold tracking-tight text-ink">{{ product().name }}</h2>
-        <p class="mt-0.5 truncate text-sm tabular-nums text-muted">
-          {{ product().sku }}@if (product().brand) {<span> · {{ product().brand }}</span>}
-        </p>
+    @if (!commissioning()) {
+      <!-- Header: identity + actions -->
+      <div class="flex items-start gap-3 border-b border-line px-5 py-4">
+        <div class="min-w-0 flex-1">
+          <h2 class="truncate text-lg font-semibold tracking-tight text-ink">{{ product().name }}</h2>
+          <p class="mt-0.5 truncate text-sm tabular-nums text-muted">
+            {{ product().sku }}@if (product().brand) {<span> · {{ product().brand }}</span>}
+          </p>
+        </div>
+        @if (!archiving()) {
+          <div class="flex shrink-0 items-center gap-1.5">
+            <p-button
+              type="button"
+              label="Edit"
+              icon="pi pi-pencil"
+              [outlined]="true"
+              size="small"
+              (onClick)="startEdit()"
+              styleClass="font-medium"
+            />
+            <button
+              type="button"
+              (click)="confirmArchive()"
+              aria-label="Archive product"
+              class="grid h-9 w-9 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+            >
+              <i class="pi pi-trash text-base" aria-hidden="true"></i>
+            </button>
+          </div>
+        }
       </div>
-      @if (!archiving()) {
-        <div class="flex shrink-0 items-center gap-1.5">
-          <p-button
-            type="button"
-            label="Edit"
-            icon="pi pi-pencil"
-            [outlined]="true"
-            size="small"
-            (onClick)="startEdit()"
-            styleClass="font-medium"
-          />
+
+      <!-- Tabs (serialized products carry an extra units surface) -->
+      @if (isSerialized() && !archiving()) {
+        <div class="flex items-center gap-1 border-b border-line px-3" role="tablist" aria-label="Product views">
           <button
             type="button"
-            (click)="confirmArchive()"
-            aria-label="Archive product"
-            class="grid h-9 w-9 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+            role="tab"
+            [attr.aria-selected]="tab() === 'overview'"
+            (click)="tab.set('overview')"
+            class="relative -mb-px px-3 py-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+            [class]="tab() === 'overview' ? 'border-b-2 border-ink text-ink' : 'text-muted hover:text-ink'"
           >
-            <i class="pi pi-trash text-base" aria-hidden="true"></i>
+            Overview
+          </button>
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="tab() === 'units'"
+            (click)="tab.set('units')"
+            class="relative -mb-px inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+            [class]="tab() === 'units' ? 'border-b-2 border-ink text-ink' : 'text-muted hover:text-ink'"
+          >
+            <i class="pi pi-wifi text-xs" aria-hidden="true"></i>
+            Units
           </button>
         </div>
       }
-    </div>
+    }
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-      <!-- Archive confirmation -->
-      @if (archiving()) {
+    @if (archiving()) {
+      <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <!-- Archive confirmation -->
         <div class="rounded-lg border border-line bg-panel px-4 py-4">
           <p class="text-sm font-medium text-ink">Archive "{{ product().name }}"?</p>
           <p class="mt-1 text-sm text-muted">
@@ -68,110 +97,132 @@
             />
           </div>
         </div>
-      } @else {
-        <!-- At-a-glance: the numbers the counter reaches for first -->
-        <dl class="grid grid-cols-3 overflow-hidden rounded-lg border border-line">
-          <div class="border-r border-line px-4 py-3">
-            <dt class="text-xs font-medium uppercase tracking-wide text-muted">On hand</dt>
-            <dd
-              class="mt-1 text-xl font-semibold tabular-nums"
-              [class.text-danger]="stock() === 'out'"
-              [class.text-ink]="stock() !== 'out'"
-            >
-              {{ product().quantityOnHand | number }}
-            </dd>
-            @switch (stock()) {
-              @case ('out') {
-                <span class="mt-1 inline-flex items-center gap-1 text-xs font-medium text-danger">
-                  <i class="pi pi-times-circle text-[0.7rem]" aria-hidden="true"></i>
-                  Out of stock
-                </span>
-              }
-              @case ('low') {
-                <span
-                  class="mt-1 inline-flex items-center gap-1 rounded border border-line bg-counter px-1.5 py-0.5 text-xs font-medium text-ink"
+      </div>
+    } @else {
+      @switch (tab()) {
+        @case ('overview') {
+          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <!-- At-a-glance: the numbers the counter reaches for first -->
+            <dl class="grid grid-cols-3 overflow-hidden rounded-lg border border-line">
+              <div class="border-r border-line px-4 py-3">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">On hand</dt>
+                <dd
+                  class="mt-1 text-xl font-semibold tabular-nums"
+                  [class.text-danger]="stock() === 'out'"
+                  [class.text-ink]="stock() !== 'out'"
                 >
-                  <i class="pi pi-exclamation-triangle text-[0.7rem]" aria-hidden="true"></i>
-                  Low: reorder at {{ product().reorderPoint | number }}
-                </span>
-              }
-            }
-          </div>
-          <div class="border-r border-line px-4 py-3">
-            <dt class="text-xs font-medium uppercase tracking-wide text-muted">Selling price</dt>
-            <dd class="mt-1 text-xl font-semibold tabular-nums text-ink">
-              {{ product().sellingPrice | money }}
-            </dd>
-          </div>
-          <div class="px-4 py-3">
-            <dt class="text-xs font-medium uppercase tracking-wide text-muted">Margin</dt>
-            <dd class="mt-1 text-xl font-semibold tabular-nums text-ink">
-              {{ margin().amount | money }}
-            </dd>
-            @if (margin().pct !== null) {
-              <span class="mt-1 block text-xs tabular-nums text-muted">
-                {{ margin().pct | number: '1.0-1' }}% of price
-              </span>
-            }
-          </div>
-        </dl>
-
-        <!-- Full record -->
-        <section class="mt-6" aria-label="Product details">
-          <dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Category</dt>
-              <dd class="mt-0.5 truncate text-sm text-ink">{{ product().category.name }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Cost price</dt>
-              <dd class="mt-0.5 text-sm tabular-nums text-ink">{{ product().costPrice | money }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Supplier</dt>
-              <dd class="mt-0.5 truncate text-sm" [class.text-ink]="product().supplier" [class.text-muted]="!product().supplier">
-                {{ product().supplier?.name || 'No supplier' }}
-              </dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Location</dt>
-              <dd class="mt-0.5 truncate text-sm" [class.text-ink]="product().location" [class.text-muted]="!product().location">
-                {{ product().location?.name || 'No location' }}
-              </dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Barcode</dt>
-              <dd class="mt-0.5 truncate text-sm tabular-nums" [class.text-ink]="product().barcode" [class.text-muted]="!product().barcode">
-                {{ product().barcode || 'None' }}
-              </dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Reorder point</dt>
-              <dd class="mt-0.5 text-sm tabular-nums" [class.text-ink]="product().reorderPoint != null" [class.text-muted]="product().reorderPoint == null">
-                @if (product().reorderPoint != null) {
-                  {{ product().reorderPoint | number }}
-                } @else {
-                  Not set
+                  {{ product().quantityOnHand | number }}
+                </dd>
+                @switch (stock()) {
+                  @case ('out') {
+                    <span class="mt-1 inline-flex items-center gap-1 text-xs font-medium text-danger">
+                      <i class="pi pi-times-circle text-[0.7rem]" aria-hidden="true"></i>
+                      Out of stock
+                    </span>
+                  }
+                  @case ('low') {
+                    <span
+                      class="mt-1 inline-flex items-center gap-1 rounded border border-line bg-counter px-1.5 py-0.5 text-xs font-medium text-ink"
+                    >
+                      <i class="pi pi-exclamation-triangle text-[0.7rem]" aria-hidden="true"></i>
+                      Low: reorder at {{ product().reorderPoint | number }}
+                    </span>
+                  }
                 }
-              </dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Serial tracking</dt>
-              <dd class="mt-0.5 text-sm text-ink">{{ product().isSerialized ? 'On' : 'Off' }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs font-medium uppercase tracking-wide text-muted">Added</dt>
-              <dd class="mt-0.5 text-sm tabular-nums text-ink">{{ product().createdAt | date: 'mediumDate' }}</dd>
-            </div>
-            @if (product().description) {
-              <div class="min-w-0 sm:col-span-2">
-                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Description</dt>
-                <dd class="mt-0.5 whitespace-pre-line text-sm text-muted">{{ product().description }}</dd>
               </div>
-            }
-          </dl>
-        </section>
+              <div class="border-r border-line px-4 py-3">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Selling price</dt>
+                <dd class="mt-1 text-xl font-semibold tabular-nums text-ink">
+                  {{ product().sellingPrice | money }}
+                </dd>
+              </div>
+              <div class="px-4 py-3">
+                <dt class="text-xs font-medium uppercase tracking-wide text-muted">Margin</dt>
+                <dd class="mt-1 text-xl font-semibold tabular-nums text-ink">
+                  {{ margin().amount | money }}
+                </dd>
+                @if (margin().pct !== null) {
+                  <span class="mt-1 block text-xs tabular-nums text-muted">
+                    {{ margin().pct | number: '1.0-1' }}% of price
+                  </span>
+                }
+              </div>
+            </dl>
+
+            <!-- Full record -->
+            <section class="mt-6" aria-label="Product details">
+              <dl class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Category</dt>
+                  <dd class="mt-0.5 truncate text-sm text-ink">{{ product().category.name }}</dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Cost price</dt>
+                  <dd class="mt-0.5 text-sm tabular-nums text-ink">{{ product().costPrice | money }}</dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Supplier</dt>
+                  <dd class="mt-0.5 truncate text-sm" [class.text-ink]="product().supplier" [class.text-muted]="!product().supplier">
+                    {{ product().supplier?.name || 'No supplier' }}
+                  </dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Location</dt>
+                  <dd class="mt-0.5 truncate text-sm" [class.text-ink]="product().location" [class.text-muted]="!product().location">
+                    {{ product().location?.name || 'No location' }}
+                  </dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Barcode</dt>
+                  <dd class="mt-0.5 truncate text-sm tabular-nums" [class.text-ink]="product().barcode" [class.text-muted]="!product().barcode">
+                    {{ product().barcode || 'None' }}
+                  </dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Reorder point</dt>
+                  <dd class="mt-0.5 text-sm tabular-nums" [class.text-ink]="product().reorderPoint != null" [class.text-muted]="product().reorderPoint == null">
+                    @if (product().reorderPoint != null) {
+                      {{ product().reorderPoint | number }}
+                    } @else {
+                      Not set
+                    }
+                  </dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Serial tracking</dt>
+                  <dd class="mt-0.5 text-sm text-ink">{{ product().isSerialized ? 'On' : 'Off' }}</dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Added</dt>
+                  <dd class="mt-0.5 text-sm tabular-nums text-ink">{{ product().createdAt | date: 'mediumDate' }}</dd>
+                </div>
+                @if (product().description) {
+                  <div class="min-w-0 sm:col-span-2">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-muted">Description</dt>
+                    <dd class="mt-0.5 whitespace-pre-line text-sm text-muted">{{ product().description }}</dd>
+                  </div>
+                }
+              </dl>
+            </section>
+          </div>
+        }
+
+        @case ('units') {
+          @if (commissioning()) {
+            <app-commission-session
+              [product]="product()"
+              (committed)="onCommissioned()"
+              (exited)="onCommissionExited()"
+            />
+          }
+          <app-units-roster
+            [hidden]="commissioning()"
+            [product]="product()"
+            (stockChanged)="unitsChanged.emit()"
+            (commission)="launchCommission()"
+          />
+        }
       }
-    </div>
+    }
   }
 </div>

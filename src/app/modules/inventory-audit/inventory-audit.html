@@ -8,7 +8,7 @@
 } @else {
   <div class="mx-auto max-w-7xl">
     <!-- Header -->
-    <div class="flex items-start justify-between gap-4">
+    <div class="flex flex-col items-start gap-4 sm:flex-row sm:justify-between">
       <p class="max-w-prose text-sm text-muted">
         Check what's physically at a location against what the catalog expects. Start an audit, sweep
         your RFID reader or scan tags, and every item lands as verified, misplaced, or unknown, with
@@ -19,7 +19,7 @@
         label="Start audit"
         icon="pi pi-plus"
         (onClick)="startAudit()"
-        styleClass="shrink-0 font-medium"
+        styleClass="shrink-0 whitespace-nowrap font-medium"
       />
     </div>
 
