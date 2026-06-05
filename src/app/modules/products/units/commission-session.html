@@ -1,0 +1,371 @@
+@switch (phase()) {
+  @case ('setup') {
+    <!-- Setup: where does this stock land? -->
+    <div class="flex flex-col">
+      <div class="border-b border-line px-5 py-3">
+        <button
+          type="button"
+          (click)="exitSetup()"
+          class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+        >
+          <i class="pi pi-angle-left text-base" aria-hidden="true"></i>
+          Back to units
+        </button>
+      </div>
+
+      <div class="px-5 py-6">
+        <div class="mx-auto max-w-md">
+          <h2 class="text-lg font-semibold tracking-tight text-ink">Register units</h2>
+          <p class="mt-1 text-sm text-muted">
+            Sweep RFID tags to bring units of
+            <span class="font-medium text-ink">{{ product().name }}</span> into stock. First, where do
+            they land?
+          </p>
+
+          <div class="mt-6 flex flex-col gap-5">
+            <div class="flex flex-col gap-1.5">
+              <label for="commission-location" class="text-sm font-medium text-ink">Location</label>
+              <p-select
+                inputId="commission-location"
+                [options]="locationOptions()"
+                optionLabel="name"
+                optionValue="id"
+                [filter]="true"
+                filterBy="name"
+                [ngModel]="locationId()"
+                (onChange)="locationId.set($event.value)"
+                placeholder="Choose a location"
+                appendTo="body"
+                styleClass="w-full text-sm"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <span class="text-sm font-medium text-ink">Reason</span>
+              <div class="inline-flex items-center gap-1" role="group" aria-label="Registration reason">
+                @for (option of reasons; track option.value) {
+                  <button
+                    type="button"
+                    (click)="reason.set(option.value)"
+                    [attr.aria-pressed]="reason() === option.value"
+                    class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                    [class]="reason() === option.value ? 'bg-ink text-counter' : 'text-muted hover:bg-line/60 hover:text-ink'"
+                  >
+                    <i [class]="option.icon" class="text-xs" aria-hidden="true"></i>
+                    {{ option.label }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label for="commission-supplier" class="text-sm font-medium text-ink">
+                Supplier <span class="font-normal text-muted">(optional)</span>
+              </label>
+              <p-select
+                inputId="commission-supplier"
+                [options]="supplierOptions()"
+                optionLabel="name"
+                optionValue="id"
+                [filter]="true"
+                filterBy="name"
+                [showClear]="true"
+                [ngModel]="supplierId()"
+                (onChange)="supplierId.set($event.value)"
+                placeholder="No supplier"
+                appendTo="body"
+                styleClass="w-full text-sm"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+              <label for="commission-note" class="text-sm font-medium text-ink">
+                Note <span class="font-normal text-muted">(optional)</span>
+              </label>
+              <input
+                pInputText
+                id="commission-note"
+                type="text"
+                [formControl]="note"
+                maxlength="255"
+                placeholder="Delivery reference, PO number, anything useful"
+                autocomplete="off"
+                class="w-full text-sm"
+              />
+            </div>
+          </div>
+
+          <div class="mt-7 flex items-center justify-end gap-2">
+            <p-button type="button" label="Cancel" [text]="true" (onClick)="exitSetup()" styleClass="text-muted" />
+            <p-button
+              type="button"
+              label="Start sweeping"
+              icon="pi pi-bolt"
+              [disabled]="!locationId()"
+              (onClick)="begin()"
+              styleClass="font-medium"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  @case ('capturing') {
+    <!-- Capture: live sweep into a staging roster -->
+    <div class="flex flex-col">
+      <!-- Header -->
+      <div class="flex items-start gap-3 border-b border-line px-5 py-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <h2 class="truncate text-base font-semibold tracking-tight text-ink">Registering units</h2>
+            @if (locationName()) {
+              <span class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-panel px-2 py-0.5 text-xs font-medium text-muted">
+                <i class="pi pi-map-marker text-[0.65rem]" aria-hidden="true"></i>
+                {{ locationName() }}
+              </span>
+            }
+          </div>
+          <p class="mt-0.5 truncate text-xs text-muted">{{ product().name }}</p>
+        </div>
+        <p-button
+          type="button"
+          label="Discard"
+          [text]="true"
+          (onClick)="staged().length ? discardPop.toggle($event) : exited.emit()"
+          [disabled]="committing()"
+          styleClass="shrink-0 text-muted"
+        />
+      </div>
+
+      <div class="px-5 py-4">
+        <!-- Capture field: owns focus while listening -->
+        <label for="commission-capture" class="sr-only">Scan or enter RFID tags</label>
+        <div
+          class="flex items-center gap-3 rounded-lg border bg-counter px-3"
+          [class]="listening() ? 'border-signal ring-2 ring-signal/40' : 'border-field'"
+        >
+          <i class="pi pi-wifi shrink-0 text-lg text-muted" aria-hidden="true"></i>
+          <input
+            #captureInput
+            id="commission-capture"
+            type="text"
+            inputmode="text"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            [formControl]="capture"
+            (keydown.enter)="onScan($event)"
+            (blur)="onCaptureBlur()"
+            placeholder="Scan or sweep tags…"
+            class="h-14 w-full min-w-0 bg-transparent text-lg tabular-nums text-ink outline-none placeholder:text-muted/70"
+          />
+          <button
+            type="button"
+            (click)="pastePop.toggle($event)"
+            aria-label="Paste a list of tags"
+            class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+          >
+            <i class="pi pi-clipboard text-base" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Status line -->
+        <div class="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-ink">
+            <span class="relative flex h-2 w-2">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal/70 motion-reduce:hidden"></span>
+              <span class="relative inline-flex h-2 w-2 rounded-full bg-signal"></span>
+            </span>
+            Listening for tags
+          </span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-muted" aria-live="polite">
+            <span class="tabular-nums font-medium text-ink">{{ count() }}</span>
+            staged
+          </span>
+        </div>
+
+        @if (duplicateNotice(); as tag) {
+          <p class="mt-2 inline-flex items-center gap-1.5 text-xs text-muted" role="status">
+            <i class="pi pi-info-circle text-[0.7rem]" aria-hidden="true"></i>
+            Already scanned: <span class="tabular-nums">{{ tag }}</span>
+          </p>
+        }
+        @if (overLimit()) {
+          <p role="alert" class="mt-2 text-xs text-danger">
+            A single batch can hold up to {{ maxUnits }} units. Remove some, or register these first.
+          </p>
+        }
+        @if (commitError()) {
+          <p role="alert" class="mt-2 text-sm text-danger">{{ commitError() }}</p>
+        }
+
+        <!-- Staging roster -->
+        <div class="mt-4">
+          @if (count() === 0) {
+            <div class="rounded-lg border border-dashed border-line px-6 py-12 text-center">
+              <p class="text-sm font-medium text-ink">No tags yet</p>
+              <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+                Pull the trigger or sweep the reader. Each tag stages a unit here; commit them all
+                when you're done.
+              </p>
+            </div>
+          } @else {
+            <div class="flex items-center justify-between px-1 pb-2">
+              <h3 class="text-xs font-medium uppercase tracking-wide text-muted">Staged units</h3>
+              <button
+                type="button"
+                (click)="clearAllPop.toggle($event)"
+                class="text-xs font-medium text-muted outline-none transition-colors hover:text-danger focus-visible:text-danger"
+              >
+                Clear all
+              </button>
+            </div>
+            <ul class="max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line bg-counter">
+              @for (unit of staged(); track unit.key) {
+                <li class="flex items-center gap-3 px-4 py-2.5">
+                  <i class="pi pi-wifi shrink-0 text-sm text-muted" aria-hidden="true"></i>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium tabular-nums text-ink">{{ unit.rfidTag }}</p>
+                    @if (unit.serialNumber || unit.assetTag) {
+                      <p class="truncate text-xs tabular-nums text-muted">
+                        @if (unit.serialNumber) {<span>SN {{ unit.serialNumber }}</span>}
+                        @if (unit.serialNumber && unit.assetTag) {<span> · </span>}
+                        @if (unit.assetTag) {<span>Asset {{ unit.assetTag }}</span>}
+                      </p>
+                    }
+                  </div>
+                  <button
+                    type="button"
+                    (click)="openEnrich(unit, $event, enrichPop)"
+                    [attr.aria-label]="'Add serial or asset tag to ' + unit.rfidTag"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                  >
+                    <i class="pi pi-pencil text-sm" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    type="button"
+                    (click)="removeStaged(unit.key)"
+                    [attr.aria-label]="'Remove ' + unit.rfidTag"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                  >
+                    <i class="pi pi-times text-sm" aria-hidden="true"></i>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      </div>
+
+      <!-- Commit bar -->
+      <div class="border-t border-line px-5 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm text-muted">
+            <span class="tabular-nums font-medium text-ink">{{ count() }}</span>
+            {{ count() === 1 ? 'unit' : 'units' }} ready
+          </p>
+          <p-button
+            type="button"
+            [label]="committing() ? 'Registering…' : 'Register ' + count() + ' ' + (count() === 1 ? 'unit' : 'units')"
+            icon="pi pi-check"
+            [loading]="committing()"
+            [disabled]="committing() || count() === 0 || overLimit()"
+            (onClick)="register()"
+            styleClass="font-medium"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Paste tags -->
+    <p-popover #pastePop appendTo="body">
+      <div class="w-72">
+        <label for="commission-paste" class="text-sm font-medium text-ink">Paste tags</label>
+        <p class="mt-0.5 text-xs text-muted">Separate by comma, space, or new line. Duplicates are skipped.</p>
+        <textarea
+          id="commission-paste"
+          pTextarea
+          [formControl]="pasteControl"
+          rows="4"
+          placeholder="EPC-0001, EPC-0002&#10;EPC-0003"
+          class="mt-2 w-full text-sm tabular-nums"
+        ></textarea>
+        <div class="mt-2 flex justify-end">
+          <p-button type="button" label="Add tags" icon="pi pi-plus" (onClick)="submitPaste(pastePop)" styleClass="font-medium" />
+        </div>
+      </div>
+    </p-popover>
+
+    <!-- Enrich a staged unit -->
+    <p-popover #enrichPop appendTo="body">
+      <div class="w-72">
+        <h4 class="text-sm font-semibold text-ink">Add identifiers</h4>
+        <p class="mt-0.5 text-xs text-muted">Optional. RFID alone is enough to register a unit.</p>
+        <div class="mt-3 flex flex-col gap-2.5">
+          <div class="flex flex-col gap-1.5">
+            <label for="commission-enrich-serial" class="text-xs font-medium text-ink">Serial number</label>
+            <input pInputText id="commission-enrich-serial" type="text" [formControl]="editSerial" maxlength="64" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label for="commission-enrich-asset" class="text-xs font-medium text-ink">Asset tag</label>
+            <input pInputText id="commission-enrich-asset" type="text" [formControl]="editAsset" maxlength="64" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
+          </div>
+        </div>
+        <div class="mt-3 flex justify-end gap-1.5">
+          <p-button type="button" label="Cancel" [text]="true" (onClick)="enrichPop.hide()" styleClass="text-muted" />
+          <p-button type="button" label="Save" (onClick)="saveEnrich(enrichPop)" styleClass="font-medium" />
+        </div>
+      </div>
+    </p-popover>
+
+    <!-- Discard confirm -->
+    <p-popover #discardPop appendTo="body">
+      <div class="w-64">
+        <p class="text-sm font-medium text-ink">Discard staged units?</p>
+        <p class="mt-1 text-xs text-muted">
+          <span class="tabular-nums">{{ count() }}</span> tags haven't been registered yet. They'll be lost.
+        </p>
+        <div class="mt-3 flex justify-end gap-2">
+          <p-button type="button" label="Keep sweeping" [text]="true" (onClick)="discardPop.hide()" styleClass="text-muted" />
+          <p-button type="button" label="Discard" icon="pi pi-trash" severity="danger" (onClick)="discardPop.hide(); exited.emit()" styleClass="font-medium" />
+        </div>
+      </div>
+    </p-popover>
+
+    <!-- Clear-all confirm -->
+    <p-popover #clearAllPop appendTo="body">
+      <div class="w-60">
+        <p class="text-sm font-medium text-ink">Clear all staged units?</p>
+        <div class="mt-3 flex justify-end gap-2">
+          <p-button type="button" label="Keep" [text]="true" (onClick)="clearAllPop.hide()" styleClass="text-muted" />
+          <p-button type="button" label="Clear all" severity="danger" (onClick)="clearStaged(clearAllPop)" styleClass="font-medium" />
+        </div>
+      </div>
+    </p-popover>
+  }
+
+  @case ('result') {
+    <!-- Result: what just happened -->
+    @if (result(); as outcome) {
+      <div class="flex flex-col items-center justify-center px-6 py-16 text-center">
+        <span class="grid h-12 w-12 place-items-center rounded-full bg-success/10 text-success">
+          <i class="pi pi-check text-2xl" aria-hidden="true"></i>
+        </span>
+        <h2 class="mt-4 text-lg font-semibold tracking-tight text-ink">
+          {{ outcome.createdCount }} {{ outcome.createdCount === 1 ? 'unit' : 'units' }} registered
+        </h2>
+        <p class="mt-1 max-w-sm text-sm text-muted">
+          {{ outcome.product.name }} now has
+          <span class="font-medium tabular-nums text-ink">{{ outcome.product.quantityOnHand }}</span>
+          on hand.
+        </p>
+        <div class="mt-6 flex items-center gap-2">
+          <p-button type="button" label="Done" [outlined]="true" (onClick)="done()" styleClass="font-medium" />
+          <p-button type="button" label="Register more" icon="pi pi-bolt" (onClick)="registerMore()" styleClass="font-medium" />
+        </div>
+      </div>
+    }
+  }
+}

@@ -1,6 +1,6 @@
 <div class="mx-auto max-w-7xl">
   <!-- Header -->
-  <div class="flex items-start justify-between gap-4">
+  <div class="flex flex-col items-start gap-4 sm:flex-row sm:justify-between">
     <p class="max-w-prose text-sm text-muted">
       Every change to stock, in order. Record a purchase, sale, return, or adjustment, and review the
       full history. Entries can't be edited; correct a mistake by recording the opposite movement.
@@ -10,7 +10,7 @@
       label="Record movement"
       icon="pi pi-plus"
       (onClick)="startRecord()"
-      styleClass="shrink-0 font-medium"
+      styleClass="shrink-0 whitespace-nowrap font-medium"
     />
   </div>
 

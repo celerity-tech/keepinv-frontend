@@ -1,7 +1,7 @@
 <div class="mx-auto max-w-6xl">
   <p class="max-w-prose text-sm text-muted">
-    The vendors you buy stock from. Keep their contact details and reorder channels here so buying
-    back a part is quick. Products link to a supplier once the inventory module is in place.
+    The vendors you buy stock from. Keep their contact details and reorder channels here so
+    reordering stock is quick. Products link to a supplier once the inventory module is in place.
   </p>
 
   <!-- Quick add: name only, stays focused for rapid entry. Details are filled in the pane. -->
@@ -15,7 +15,7 @@
           #addInput
           type="text"
           formControlName="name"
-          placeholder="e.g. Sunrise Motor Parts"
+          placeholder="Supplier or vendor name"
           autocomplete="off"
           maxlength="100"
           [invalid]="!!addError()"

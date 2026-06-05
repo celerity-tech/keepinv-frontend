@@ -1,0 +1,350 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { finalize } from 'rxjs';
+import { ButtonModule } from 'primeng/button';
+import { InputTextModule } from 'primeng/inputtext';
+import { SelectModule } from 'primeng/select';
+import { TextareaModule } from 'primeng/textarea';
+import { Popover, PopoverModule } from 'primeng/popover';
+
+import { LocationsService } from '../../locations/services/locations.service';
+import { SuppliersService } from '../../suppliers/services/suppliers.service';
+import { httpErrorMessage } from '../../../../common/http/http-error-message';
+import { Product } from '../types/product.types';
+import {
+  RegisterMovementType,
+  RegisterProductUnitsResult,
+} from '../types/product-unit.types';
+import { ProductUnitsService } from '../services/product-units.service';
+
+/** One unit staged for registration. The RFID tag is the scan anchor; serial/asset are optional. */
+interface StagedUnit {
+  /** Stable list key. The RFID tag is unique within a session, so it doubles as the key. */
+  readonly key: string;
+  readonly rfidTag: string;
+  serialNumber: string;
+  assetTag: string;
+}
+
+interface NamedRecord {
+  readonly id: string;
+  readonly name: string;
+}
+
+interface ReasonChip {
+  readonly value: RegisterMovementType;
+  readonly label: string;
+  readonly icon: string;
+}
+
+/** Hard cap from the backend: a single register accepts at most this many units. */
+const MAX_UNITS = 500;
+
+/**
+ * The live RFID commissioning session for a serialized product. A focused takeover
+ * of the detail pane: pick where the stock lands, then sweep tags. Unlike the audit
+ * session, registration is one atomic commit, so scans stage *client-side* into a
+ * roster the operator can prune and enrich before committing. The scan field owns
+ * focus throughout, so an RFID sweep always lands here. On commit the whole batch
+ * posts at once; the result echoes the product's refreshed on-hand.
+ */
+@Component({
+  selector: 'app-commission-session',
+  imports: [
+    ReactiveFormsModule,
+    FormsModule,
+    ButtonModule,
+    InputTextModule,
+    SelectModule,
+    TextareaModule,
+    PopoverModule,
+  ],
+  templateUrl: './commission-session.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class CommissionSession {
+  private readonly service = inject(ProductUnitsService);
+  private readonly locationsService = inject(LocationsService);
+  private readonly suppliersService = inject(SuppliersService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly product = input.required<Product>();
+
+  /** A register succeeded; the parent refreshes the roster and the product's on-hand. */
+  readonly committed = output<void>();
+  /** The operator left the session; the parent returns to the roster. */
+  readonly exited = output<void>();
+
+  private readonly captureInput = viewChild<ElementRef<HTMLInputElement>>('captureInput');
+
+  protected readonly phase = signal<'setup' | 'capturing' | 'result'>('setup');
+
+  // --- Setup ---
+  protected readonly locationId = signal<string | null>(null);
+  protected readonly supplierId = signal<string | null>(null);
+  protected readonly reason = signal<RegisterMovementType>('INITIAL');
+  protected readonly note = new FormControl('', { nonNullable: true });
+  protected readonly locationOptions = signal<NamedRecord[]>([]);
+  protected readonly supplierOptions = signal<NamedRecord[]>([]);
+  protected readonly reasons: ReasonChip[] = [
+    { value: 'INITIAL', label: 'Initial stock', icon: 'pi pi-box' },
+    { value: 'PURCHASE', label: 'Purchase', icon: 'pi pi-shopping-cart' },
+  ];
+
+  // --- Capture ---
+  protected readonly staged = signal<StagedUnit[]>([]);
+  protected readonly capture = new FormControl('', { nonNullable: true });
+  protected readonly pasteControl = new FormControl('', { nonNullable: true });
+  protected readonly committing = signal(false);
+  protected readonly commitError = signal<string | null>(null);
+  /** The most recent tag rejected as an in-session duplicate, for a brief notice. */
+  protected readonly duplicateNotice = signal<string | null>(null);
+
+  // --- Per-row enrich editor (shared popover) ---
+  protected readonly editKey = signal<string | null>(null);
+  protected readonly editSerial = new FormControl('', { nonNullable: true });
+  protected readonly editAsset = new FormControl('', { nonNullable: true });
+
+  // --- Result ---
+  protected readonly result = signal<RegisterProductUnitsResult | null>(null);
+
+  protected readonly count = computed(() => this.staged().length);
+  protected readonly overLimit = computed(() => this.count() > MAX_UNITS);
+  protected readonly maxUnits = MAX_UNITS;
+
+  protected readonly listening = computed(
+    () => this.phase() === 'capturing' && !this.committing(),
+  );
+
+  protected readonly locationName = computed(
+    () => this.locationOptions().find((option) => option.id === this.locationId())?.name ?? null,
+  );
+
+  private duplicateTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    this.loadOptions();
+
+    // A new product resets the whole session to setup.
+    effect(() => {
+      this.product().id;
+      this.resetSession();
+    });
+
+    // Keep the scan field focused whenever the session is listening for tags.
+    effect(() => {
+      const el = this.captureInput();
+      if (el && this.listening()) {
+        el.nativeElement.focus();
+      }
+    });
+  }
+
+  // --- Setup actions ---
+
+  protected begin(): void {
+    if (!this.locationId()) {
+      return;
+    }
+    this.phase.set('capturing');
+  }
+
+  protected exitSetup(): void {
+    this.exited.emit();
+  }
+
+  // --- Capture actions ---
+
+  protected onScan(event: Event): void {
+    event.preventDefault();
+    const value = this.capture.value.trim();
+    this.capture.setValue('');
+    if (value) {
+      this.addToken(value);
+    }
+  }
+
+  protected onCaptureBlur(): void {
+    if (!this.listening()) {
+      return;
+    }
+    // Reclaim focus only if it fell to nothing; never steal it from a real control.
+    setTimeout(() => {
+      const el = this.captureInput()?.nativeElement;
+      const active = document.activeElement;
+      if (el && this.listening() && (active === document.body || active === null)) {
+        el.focus();
+      }
+    });
+  }
+
+  protected refocus(): void {
+    if (this.listening()) {
+      this.captureInput()?.nativeElement.focus();
+    }
+  }
+
+  protected submitPaste(popover: Popover): void {
+    const raw = this.pasteControl.value.trim();
+    if (!raw) {
+      return;
+    }
+    this.pasteControl.setValue('');
+    popover.hide();
+    for (const token of raw.split(/[\s,;]+/)) {
+      this.addToken(token);
+    }
+    setTimeout(() => this.refocus());
+  }
+
+  protected removeStaged(key: string): void {
+    this.staged.update((list) => list.filter((unit) => unit.key !== key));
+    this.refocus();
+  }
+
+  protected clearStaged(popover: Popover): void {
+    popover.hide();
+    this.staged.set([]);
+    this.commitError.set(null);
+    this.refocus();
+  }
+
+  // --- Per-row enrich ---
+
+  protected openEnrich(unit: StagedUnit, event: Event, popover: Popover): void {
+    this.editKey.set(unit.key);
+    this.editSerial.setValue(unit.serialNumber);
+    this.editAsset.setValue(unit.assetTag);
+    popover.toggle(event);
+  }
+
+  protected saveEnrich(popover: Popover): void {
+    const key = this.editKey();
+    if (!key) {
+      return;
+    }
+    const serialNumber = this.editSerial.value.trim();
+    const assetTag = this.editAsset.value.trim();
+    this.staged.update((list) =>
+      list.map((unit) => (unit.key === key ? { ...unit, serialNumber, assetTag } : unit)),
+    );
+    popover.hide();
+    this.refocus();
+  }
+
+  // --- Commit ---
+
+  protected register(): void {
+    const locationId = this.locationId();
+    if (!locationId || this.committing() || this.count() === 0 || this.overLimit()) {
+      return;
+    }
+    this.committing.set(true);
+    this.commitError.set(null);
+
+    this.service
+      .register({
+        productId: this.product().id,
+        locationId,
+        movementType: this.reason(),
+        supplierId: this.supplierId() ?? undefined,
+        note: this.note.value.trim() || undefined,
+        units: this.staged().map((unit) => ({
+          rfidTag: unit.rfidTag,
+          serialNumber: unit.serialNumber || undefined,
+          assetTag: unit.assetTag || undefined,
+        })),
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.committing.set(false)),
+      )
+      .subscribe({
+        next: (result) => {
+          this.result.set(result);
+          this.phase.set('result');
+          this.committed.emit();
+        },
+        error: (error: unknown) => this.commitError.set(httpErrorMessage(error)),
+      });
+  }
+
+  // --- Result actions ---
+
+  /** Keep the setup (location, reason, supplier) and sweep another batch. */
+  protected registerMore(): void {
+    this.staged.set([]);
+    this.commitError.set(null);
+    this.result.set(null);
+    this.phase.set('capturing');
+  }
+
+  protected done(): void {
+    this.exited.emit();
+  }
+
+  private addToken(raw: string): void {
+    const value = raw.trim();
+    if (!value) {
+      return;
+    }
+    if (this.isStaged(value)) {
+      this.flagDuplicate(value);
+      return;
+    }
+    this.staged.update((list) => [
+      { key: value, rfidTag: value, serialNumber: '', assetTag: '' },
+      ...list,
+    ]);
+  }
+
+  private isStaged(value: string): boolean {
+    return this.staged().some(
+      (unit) => unit.rfidTag === value || unit.serialNumber === value || unit.assetTag === value,
+    );
+  }
+
+  private flagDuplicate(value: string): void {
+    this.duplicateNotice.set(value);
+    if (this.duplicateTimer) {
+      clearTimeout(this.duplicateTimer);
+    }
+    this.duplicateTimer = setTimeout(() => this.duplicateNotice.set(null), 2000);
+  }
+
+  private resetSession(): void {
+    this.phase.set('setup');
+    this.staged.set([]);
+    this.result.set(null);
+    this.commitError.set(null);
+    this.capture.setValue('', { emitEvent: false });
+  }
+
+  private loadOptions(): void {
+    this.locationsService
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((items) =>
+        this.locationOptions.set(items.map(({ id, name }) => ({ id, name }))),
+      );
+    this.suppliersService
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((items) =>
+        this.supplierOptions.set(items.map(({ id, name }) => ({ id, name }))),
+      );
+  }
+}

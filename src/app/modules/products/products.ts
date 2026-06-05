@@ -87,9 +87,18 @@ export class Products {
   protected readonly hasFilters = signal(false);
   /** Holds the backend's error message for the list load, or null when healthy. */
   protected readonly loadError = signal<string | null>(null);
-  /** No products at all (not merely filtered to nothing). Drives the first-run empty state. */
+  /**
+   * No products at all (not merely filtered to nothing). Drives the first-run empty
+   * state. Suppressed in create mode so clicking "New product" on an empty catalog
+   * reveals the form pane instead of staying on the empty state.
+   */
   protected readonly isEmptyCatalog = computed(
-    () => !this.loading() && !this.loadError() && this.total() === 0 && !this.hasFilters(),
+    () =>
+      this.mode() !== 'create' &&
+      !this.loading() &&
+      !this.loadError() &&
+      this.total() === 0 &&
+      !this.hasFilters(),
   );
 
   constructor() {
@@ -258,6 +267,17 @@ export class Products {
           list.map((item) => (item.id === id ? product : item)),
         );
       });
+  }
+
+  /**
+   * A unit-level mutation (register, status change, retire) shifted on-hand for the
+   * selected product. Re-hydrate it so the catalog row and detail header stay truthful.
+   */
+  protected onUnitsChanged(): void {
+    const id = this.selected()?.id;
+    if (id) {
+      this.hydrateSelected(id);
+    }
   }
 
   protected onArchived(id: string): void {
