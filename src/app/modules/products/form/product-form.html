@@ -26,7 +26,7 @@
             formControlName="name"
             autocomplete="off"
             maxlength="150"
-            placeholder="e.g. Classic Cotton Crew Neck T-Shirt"
+            placeholder="Full product name"
             [invalid]="form.controls.name.touched && form.controls.name.invalid"
             class="w-full text-sm"
           />
@@ -40,7 +40,7 @@
             formControlName="sku"
             autocomplete="off"
             maxlength="64"
-            placeholder="e.g. TSH-CRW-BLK-M"
+            placeholder="e.g. SKU-0001"
             [invalid]="form.controls.sku.touched && form.controls.sku.invalid"
             class="w-full text-sm tabular-nums"
           />
@@ -72,7 +72,7 @@
             formControlName="brand"
             autocomplete="off"
             maxlength="100"
-            placeholder="e.g. Levi's"
+            placeholder="Brand or manufacturer"
             class="w-full text-sm"
           />
         </div>
@@ -259,7 +259,7 @@
         rows="3"
         maxlength="1000"
         class="w-full resize-y text-sm"
-        placeholder="Material, fit, care notes, anything the counter should know."
+        placeholder="Specs, notes, anything the counter should know."
       ></textarea>
     </div>
   </div>
@@ -300,7 +300,7 @@
         [formControl]="quickCategoryName"
         autocomplete="off"
         maxlength="100"
-        placeholder="e.g. T-Shirts"
+        placeholder="Category name"
         (keydown.enter)="$event.preventDefault(); createCategory(categoryPopover)"
         class="w-full text-sm"
       />
@@ -330,7 +330,7 @@
         [formControl]="quickSupplierName"
         autocomplete="off"
         maxlength="100"
-        placeholder="e.g. Threadline Apparel Co."
+        placeholder="Supplier or vendor name"
         (keydown.enter)="$event.preventDefault(); createSupplier(supplierPopover)"
         class="w-full text-sm"
       />
