@@ -17,9 +17,9 @@
         <div class="mx-auto max-w-md">
           <h2 class="text-lg font-semibold tracking-tight text-ink">Register units</h2>
           <p class="mt-1 text-sm text-muted">
-            Sweep RFID tags to bring units of
-            <span class="font-medium text-ink">{{ product().name }}</span> into stock. First, where do
-            they land?
+            Bring units of
+            <span class="font-medium text-ink">{{ product().name }}</span> into stock by scanning
+            serials, or sweeping RFID tags. First, where do they land?
           </p>
 
           <div class="mt-6 flex flex-col gap-5">
@@ -99,8 +99,8 @@
             <p-button type="button" label="Cancel" [text]="true" (onClick)="exitSetup()" styleClass="text-muted" />
             <p-button
               type="button"
-              label="Start sweeping"
-              icon="pi pi-bolt"
+              label="Start registering"
+              icon="pi pi-arrow-right"
               [disabled]="!locationId()"
               (onClick)="begin()"
               styleClass="font-medium"
@@ -139,13 +139,29 @@
       </div>
 
       <div class="px-5 py-4">
+        <!-- Capture method: serial number is the default; RFID is one tap away -->
+        <div class="mb-3 inline-flex items-center gap-1" role="group" aria-label="Capture method">
+          @for (m of captureModes; track m.value) {
+            <button
+              type="button"
+              (click)="setCaptureMode(m.value)"
+              [attr.aria-pressed]="captureMode() === m.value"
+              class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+              [class]="captureMode() === m.value ? 'bg-ink text-counter' : 'text-muted hover:bg-line/60 hover:text-ink'"
+            >
+              <i [class]="m.icon" class="text-xs" aria-hidden="true"></i>
+              {{ m.label }}
+            </button>
+          }
+        </div>
+
         <!-- Capture field: owns focus while listening -->
-        <label for="commission-capture" class="sr-only">Scan or enter RFID tags</label>
+        <label for="commission-capture" class="sr-only">Scan or enter a unit identifier</label>
         <div
           class="flex items-center gap-3 rounded-lg border bg-counter px-3"
           [class]="listening() ? 'border-signal ring-2 ring-signal/40' : 'border-field'"
         >
-          <i class="pi pi-wifi shrink-0 text-lg text-muted" aria-hidden="true"></i>
+          <i [class]="captureModeMeta().icon" class="shrink-0 text-lg text-muted" aria-hidden="true"></i>
           <input
             #captureInput
             id="commission-capture"
@@ -158,13 +174,13 @@
             [formControl]="capture"
             (keydown.enter)="onScan($event)"
             (blur)="onCaptureBlur()"
-            placeholder="Scan or sweep tags…"
+            [placeholder]="captureModeMeta().placeholder"
             class="h-14 w-full min-w-0 bg-transparent text-lg tabular-nums text-ink outline-none placeholder:text-muted/70"
           />
           <button
             type="button"
             (click)="pastePop.toggle($event)"
-            aria-label="Paste a list of tags"
+            aria-label="Paste a list of identifiers"
             class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
           >
             <i class="pi pi-clipboard text-base" aria-hidden="true"></i>
@@ -178,7 +194,7 @@
               <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal/70 motion-reduce:hidden"></span>
               <span class="relative inline-flex h-2 w-2 rounded-full bg-signal"></span>
             </span>
-            Listening for tags
+            {{ captureModeMeta().listening }}
           </span>
           <span class="inline-flex items-center gap-1.5 text-xs text-muted" aria-live="polite">
             <span class="tabular-nums font-medium text-ink">{{ count() }}</span>
@@ -205,10 +221,10 @@
         <div class="mt-4">
           @if (count() === 0) {
             <div class="rounded-lg border border-dashed border-line px-6 py-12 text-center">
-              <p class="text-sm font-medium text-ink">No tags yet</p>
+              <p class="text-sm font-medium text-ink">Nothing staged yet</p>
               <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
-                Pull the trigger or sweep the reader. Each tag stages a unit here; commit them all
-                when you're done.
+                Scan or type a serial number, or switch to RFID and sweep. Each one stages a unit
+                here; register them all when you're done.
               </p>
             </div>
           } @else {
@@ -223,31 +239,27 @@
               </button>
             </div>
             <ul class="max-h-80 divide-y divide-line overflow-y-auto rounded-lg border border-line bg-counter">
-              @for (unit of staged(); track unit.key) {
+              @for (row of stagedRows(); track row.key) {
                 <li class="flex items-center gap-3 px-4 py-2.5">
-                  <i class="pi pi-wifi shrink-0 text-sm text-muted" aria-hidden="true"></i>
+                  <i [class]="row.icon" class="shrink-0 text-sm text-muted" aria-hidden="true"></i>
                   <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium tabular-nums text-ink">{{ unit.rfidTag }}</p>
-                    @if (unit.serialNumber || unit.assetTag) {
-                      <p class="truncate text-xs tabular-nums text-muted">
-                        @if (unit.serialNumber) {<span>SN {{ unit.serialNumber }}</span>}
-                        @if (unit.serialNumber && unit.assetTag) {<span> · </span>}
-                        @if (unit.assetTag) {<span>Asset {{ unit.assetTag }}</span>}
-                      </p>
+                    <p class="truncate text-sm font-medium tabular-nums text-ink">{{ row.value }}</p>
+                    @if (row.meta) {
+                      <p class="truncate text-xs tabular-nums text-muted">{{ row.meta }}</p>
                     }
                   </div>
                   <button
                     type="button"
-                    (click)="openEnrich(unit, $event, enrichPop)"
-                    [attr.aria-label]="'Add serial or asset tag to ' + unit.rfidTag"
+                    (click)="openEnrich(row.key, $event, enrichPop)"
+                    [attr.aria-label]="'Add identifiers to ' + row.value"
                     class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
                   >
                     <i class="pi pi-pencil text-sm" aria-hidden="true"></i>
                   </button>
                   <button
                     type="button"
-                    (click)="removeStaged(unit.key)"
-                    [attr.aria-label]="'Remove ' + unit.rfidTag"
+                    (click)="removeStaged(row.key)"
+                    [attr.aria-label]="'Remove ' + row.value"
                     class="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
                   >
                     <i class="pi pi-times text-sm" aria-hidden="true"></i>
@@ -282,14 +294,16 @@
     <!-- Paste tags -->
     <p-popover #pastePop appendTo="body">
       <div class="w-72">
-        <label for="commission-paste" class="text-sm font-medium text-ink">Paste tags</label>
-        <p class="mt-0.5 text-xs text-muted">Separate by comma, space, or new line. Duplicates are skipped.</p>
+        <label for="commission-paste" class="text-sm font-medium text-ink">Paste a list</label>
+        <p class="mt-0.5 text-xs text-muted">
+          Added as {{ captureModeMeta().label }}. Separate by comma, space, or new line; duplicates are skipped.
+        </p>
         <textarea
           id="commission-paste"
           pTextarea
           [formControl]="pasteControl"
           rows="4"
-          placeholder="EPC-0001, EPC-0002&#10;EPC-0003"
+          placeholder="4Z9F-22817, 4Z9F-22818&#10;4Z9F-22819"
           class="mt-2 w-full text-sm tabular-nums"
         ></textarea>
         <div class="mt-2 flex justify-end">
@@ -301,8 +315,8 @@
     <!-- Enrich a staged unit -->
     <p-popover #enrichPop appendTo="body">
       <div class="w-72">
-        <h4 class="text-sm font-semibold text-ink">Add identifiers</h4>
-        <p class="mt-0.5 text-xs text-muted">Optional. RFID alone is enough to register a unit.</p>
+        <h4 class="text-sm font-semibold text-ink">Edit identifiers</h4>
+        <p class="mt-0.5 text-xs text-muted">A unit needs at least one of serial, asset tag, or EPC.</p>
         <div class="mt-3 flex flex-col gap-2.5">
           <div class="flex flex-col gap-1.5">
             <label for="commission-enrich-serial" class="text-xs font-medium text-ink">Serial number</label>
@@ -313,6 +327,9 @@
             <input pInputText id="commission-enrich-asset" type="text" [formControl]="editAsset" maxlength="64" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
           </div>
         </div>
+        @if (enrichError()) {
+          <p role="alert" class="mt-2 text-xs text-danger">{{ enrichError() }}</p>
+        }
         <div class="mt-3 flex justify-end gap-1.5">
           <p-button type="button" label="Cancel" [text]="true" (onClick)="enrichPop.hide()" styleClass="text-muted" />
           <p-button type="button" label="Save" (onClick)="saveEnrich(enrichPop)" styleClass="font-medium" />

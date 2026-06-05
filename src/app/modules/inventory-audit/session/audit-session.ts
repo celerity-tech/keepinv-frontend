@@ -30,6 +30,7 @@ import {
 } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
+import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { Popover, PopoverModule } from 'primeng/popover';
 
@@ -97,6 +98,7 @@ const RECENT_LIMIT = 12;
     DatePipe,
     ButtonModule,
     SelectModule,
+    InputTextModule,
     TextareaModule,
     PopoverModule,
     AuditOutcomeBadge,
@@ -132,6 +134,11 @@ export class AuditSession implements OnInit {
   protected readonly expectedPreview = signal<number | null>(null);
   protected readonly starting = signal(false);
   protected readonly setupError = signal<string | null>(null);
+
+  // Quick-create a location inline, mirroring the product form's "+ New" pattern.
+  protected readonly quickLocationName = new FormControl('', { nonNullable: true });
+  protected readonly quickBusy = signal(false);
+  protected readonly quickError = signal<string | null>(null);
 
   // --- Capture ---
   protected readonly report = signal<InventoryAuditReport | null>(null);
@@ -340,6 +347,41 @@ export class AuditSession implements OnInit {
 
   protected exitSetup(): void {
     this.exited.emit(null);
+  }
+
+  /** Reset the quick-create popover's transient state as it opens. */
+  protected openQuickLocation(): void {
+    this.quickError.set(null);
+    this.quickLocationName.reset('');
+  }
+
+  /** Create a location inline, select it, and close the popover, without leaving setup. */
+  protected createLocation(popover: Popover): void {
+    const name = this.quickLocationName.value.trim();
+    this.quickError.set(null);
+    if (!name) {
+      this.quickError.set('Enter a name.');
+      return;
+    }
+    if (this.quickBusy()) {
+      return;
+    }
+    this.quickBusy.set(true);
+    this.locationsService
+      .create({ name })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.quickBusy.set(false)),
+      )
+      .subscribe({
+        next: (created) => {
+          this.locationOptions.update((list) => [{ id: created.id, name: created.name }, ...list]);
+          this.locationControl.setValue(created.id);
+          this.quickLocationName.reset('');
+          popover.hide();
+        },
+        error: (error: unknown) => this.quickError.set(httpErrorMessage(error, `"${name}"`)),
+      });
   }
 
   /** Leave the capture screen but keep the audit in progress, so it can be resumed. */

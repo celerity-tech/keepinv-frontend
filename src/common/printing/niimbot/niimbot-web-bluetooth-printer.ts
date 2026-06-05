@@ -1,236 +1,237 @@
 /// <reference types="web-bluetooth" />
-import { LabelBitmap, LabelPrinter, PrinterError } from '../label-printer';
-import { decodePackets, NiimbotPacket } from './niimbot-packet';
 import {
-  bitmapRow,
-  pageEnd,
-  pageStart,
-  printEnd,
-  printStart,
-  Resp,
-  rowCounts,
-  setDensity,
-  setLabelType,
-  setPageSize,
-} from './niimbot-protocol';
+  ConnectEvent,
+  ConnectResult,
+  DisconnectEvent,
+  ImageEncoder,
+  LabelType,
+  NiimbotAbstractClient,
+  PrintError as NiimbotPrintError,
+  PrinterModel,
+  RawPacketSentEvent,
+  findPrintTask,
+  getPrinterMetaByModel,
+} from '@mmote/niimbluelib';
+import type { PrintDirection, PrintTaskName } from '@mmote/niimbluelib';
 
-/**
- * Niimbot's serial-over-BLE service (B-series, incl. B21) first, with common
- * fallbacks some firmware uses. We declare them all as optional services so the
- * browser grants access to whichever one this printer actually exposes.
- */
+import { LabelBitmap, LabelPrinter, PrinterError } from '../label-printer';
+
 const SERVICE_UUIDS = [
-  '0000e0ff-3c17-d293-8e48-14fe2e4da212', // B21-C2B and similar variants
-  'e7810a71-73ae-499d-8c15-faa9aef0c3f2', // classic B-series / NiimBlue default
+  '0000e0ff-3c17-d293-8e48-14fe2e4da212',
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
   '0000ff00-0000-1000-8000-00805f9b34fb',
   '0000ffe0-0000-1000-8000-00805f9b34fb',
   '0000fee7-0000-1000-8000-00805f9b34fb',
 ];
-/** B21 default print density (1..5) and gap-label type. */
+
+const B21_MODEL_ID = getPrinterMetaByModel(PrinterModel.B21)?.id[0] ?? 768;
+const B21_C2B_MODEL_ID = getPrinterMetaByModel(PrinterModel.B21_C2B)?.id[0] ?? 771;
+const FALLBACK_PRINT_TASK = findPrintTask(PrinterModel.B21_C2B) ?? 'B1';
+const FALLBACK_PRINT_DIRECTION = getPrinterMetaByModel(PrinterModel.B21_C2B)?.printDirection ?? 'top';
 const DENSITY = 3;
-const LABEL_TYPE = 1;
-/** Breathing room between line writes so the printer's buffer keeps up. */
-const WRITE_DELAY_MS = 6;
-const ACK_TIMEOUT_MS = 1500;
-const FINISH_TIMEOUT_MS = 8000;
+const PACKET_INTERVAL_MS = 6;
+const PAGE_TIMEOUT_MS = 10_000;
+const STATUS_POLL_MS = 300;
+const STATUS_TIMEOUT_MS = 12_000;
+const B1_PRINT_END_DELAY_MS = 500;
 
-interface Waiter {
-  readonly type: number;
-  readonly resolve: (packet: NiimbotPacket | null) => void;
-}
-
-/** The characteristics we drive: one to write commands, one to receive responses. */
 interface Channel {
   readonly writeChar: BluetoothRemoteGATTCharacteristic;
   readonly notifyChar: BluetoothRemoteGATTCharacteristic;
-  /** Whether the write characteristic supports write-without-response. */
-  readonly writeWithoutResponse: boolean;
 }
 
-/**
- * Drives a Niimbot B21 over the Web Bluetooth API. The only file that touches
- * `navigator.bluetooth`. Sends framed protocol packets over a single
- * notify + write-without-response characteristic and matches responses by opcode.
- */
 export class NiimbotWebBluetoothPrinter implements LabelPrinter {
-  private device?: BluetoothDevice;
-  private writeChar?: BluetoothRemoteGATTCharacteristic;
-  private notifyChar?: BluetoothRemoteGATTCharacteristic;
-  private writeWithoutResponse = true;
-  private rxBuffer: Uint8Array = new Uint8Array(0);
-  private waiters: Waiter[] = [];
+  private readonly client = new AssetWiseNiimbotBluetoothClient();
   private onDisconnect?: () => void;
 
+  constructor() {
+    this.client.setPacketInterval(PACKET_INTERVAL_MS);
+    this.client.on('disconnect', () => this.onDisconnect?.());
+  }
+
   get connected(): boolean {
-    return this.writeChar !== undefined && this.device?.gatt?.connected === true;
+    return this.client.isConnected();
   }
 
   async connect(onDisconnect?: () => void): Promise<string> {
     if (!('bluetooth' in navigator)) {
       throw new PrinterError('Web Bluetooth is unavailable. Use Chrome or Edge over HTTPS.');
     }
+
     this.onDisconnect = onDisconnect;
-
-    let device: BluetoothDevice;
     try {
-      device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: 'B' }, { namePrefix: 'D' }, { services: [SERVICE_UUIDS[0]] }],
-        optionalServices: SERVICE_UUIDS,
-      });
+      const info = await this.client.connect();
+      return info.deviceName ?? 'Niimbot B21';
     } catch (error) {
-      throw toCancellation(error);
+      throw toPrinterError(error);
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client.disconnect();
+  }
+
+  async print(bitmap: LabelBitmap): Promise<void> {
+    validateBitmap(bitmap);
+
+    if (!this.connected) {
+      throw new PrinterError('Printer is not connected.');
     }
 
+    const canvas = bitmapToCanvas(bitmap);
+    const taskName = this.printTaskName();
+    const encoded = ImageEncoder.encodeCanvas(canvas, this.printDirection());
+    const task = this.client.abstraction.newPrintTask(taskName, {
+      labelType: LabelType.WithGaps,
+      density: DENSITY,
+      totalPages: 1,
+      pageTimeoutMs: PAGE_TIMEOUT_MS,
+      statusPollIntervalMs: STATUS_POLL_MS,
+      statusTimeoutMs: STATUS_TIMEOUT_MS,
+    });
+
+    this.client.stopHeartbeat();
+    try {
+      await task.printInit();
+      await task.printPage(encoded, 1);
+
+      if (taskName === 'B1') {
+        await sleep(B1_PRINT_END_DELAY_MS);
+        await task.printEnd().catch(() => false);
+        return;
+      }
+
+      await task.waitForFinished();
+    } catch (error) {
+      throw toPrinterError(error);
+    } finally {
+      if (taskName !== 'B1') {
+        await task.printEnd().catch(() => false);
+      }
+      if (this.connected) {
+        this.client.startHeartbeat();
+      }
+    }
+  }
+
+  private printTaskName(): PrintTaskName {
+    return this.client.getPrintTaskType() ?? FALLBACK_PRINT_TASK;
+  }
+
+  private printDirection(): PrintDirection {
+    return this.client.getModelMetadata()?.printDirection ?? FALLBACK_PRINT_DIRECTION;
+  }
+}
+
+class AssetWiseNiimbotBluetoothClient extends NiimbotAbstractClient {
+  private device?: BluetoothDevice;
+  private gattServer?: BluetoothRemoteGATTServer;
+  private writeChar?: BluetoothRemoteGATTCharacteristic;
+  private notifyChar?: BluetoothRemoteGATTCharacteristic;
+
+  override async connect(): Promise<{ deviceName?: string; result: ConnectResult }> {
+    await this.disconnect();
+
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'B' }, { namePrefix: 'D' }, { services: [SERVICE_UUIDS[0]] }],
+      optionalServices: SERVICE_UUIDS,
+    });
     if (!device.gatt) {
-      throw new PrinterError('This device has no Bluetooth GATT support.');
+      throw new Error('Device has no Bluetooth GATT support.');
     }
 
-    this.device = device;
-    device.addEventListener('gattserverdisconnected', this.handleDisconnect);
+    const onDisconnect = (): void => {
+      this.gattServer = undefined;
+      this.writeChar = undefined;
+      this.notifyChar = undefined;
+      this.info = {};
+      this.emit('disconnect', new DisconnectEvent());
+      device.removeEventListener('gattserverdisconnected', onDisconnect);
+    };
+    device.addEventListener('gattserverdisconnected', onDisconnect);
 
     const server = await device.gatt.connect();
     const channel = await discoverChannel(server);
     if (!channel) {
       server.disconnect();
-      throw new PrinterError(
+      throw new Error(
         "Couldn't find a usable Bluetooth characteristic on the printer. Make sure no " +
-          'other app or your phone is connected to the B21 (close the Niimbot app and ' +
-          '"Remove" it from Windows Bluetooth settings), power-cycle it, then try again.',
+          'other app or your phone is connected to it, then power-cycle the printer and try again.',
       );
     }
 
+    channel.notifyChar.addEventListener('characteristicvaluechanged', this.handleNotification);
+    await channel.notifyChar.startNotifications();
+
+    this.device = device;
+    this.gattServer = server;
     this.writeChar = channel.writeChar;
     this.notifyChar = channel.notifyChar;
-    this.writeWithoutResponse = channel.writeWithoutResponse;
-    this.notifyChar.addEventListener('characteristicvaluechanged', this.handleNotification);
-    await this.notifyChar.startNotifications();
 
-    return device.name ?? 'Niimbot B21';
+    await this.negotiateBestEffort(device.name);
+
+    const result = {
+      deviceName: device.name,
+      result: this.info.connectResult ?? ConnectResult.Connected,
+    };
+    this.emit('connect', new ConnectEvent(result));
+    return result;
   }
 
-  async disconnect(): Promise<void> {
-    if (this.device?.gatt?.connected) {
-      this.device.gatt.disconnect();
-    }
+  override async disconnect(): Promise<void> {
+    this.stopHeartbeat();
+    this.notifyChar?.removeEventListener('characteristicvaluechanged', this.handleNotification);
+    this.gattServer?.disconnect();
+    this.device = undefined;
+    this.gattServer = undefined;
     this.writeChar = undefined;
     this.notifyChar = undefined;
+    this.info = {};
   }
 
-  async print(bitmap: LabelBitmap): Promise<void> {
-    if (!this.writeChar) {
-      throw new PrinterError('Printer is not connected.');
-    }
-
-    // Setup: wait for the acks we know so rows aren't sent before the printer is ready.
-    await this.transceive(setDensity(DENSITY), Resp.SET_DENSITY, 1000);
-    await this.transceive(setLabelType(LABEL_TYPE), Resp.SET_LABEL_TYPE, 1000);
-    await this.transceive(printStart(1, 0), Resp.PRINT_START, 1000);
-    await this.transceive(pageStart(), Resp.PAGE_START, 1000);
-    // SetPageSize has no distinct ack; give the printer a moment, then stream rows.
-    await this.send(setPageSize(bitmap.heightDots, bitmap.widthDots, 1), 60);
-
-    const rowBytes = bitmap.widthDots / 8;
-    for (let y = 0; y < bitmap.heightDots; y++) {
-      const row = bitmap.data.subarray(y * rowBytes, (y + 1) * rowBytes);
-      await this.write(bitmapRow(y, row, rowCounts(row, bitmap.widthDots)));
-      await sleep(WRITE_DELAY_MS);
-    }
-
-    await this.send(pageEnd(), 60);
-    await this.finish();
+  override isConnected(): boolean {
+    return this.gattServer !== undefined && this.writeChar !== undefined && this.device?.gatt?.connected === true;
   }
 
-  /** Send PRINT_END until the printer acknowledges (it then feeds the label out). */
-  private async finish(): Promise<void> {
-    const deadline = Date.now() + FINISH_TIMEOUT_MS;
-    do {
-      const response = await this.transceive(printEnd(), Resp.PRINT_END, 1000);
-      if (response) {
-        return;
+  override async sendRaw(data: Uint8Array, force?: boolean): Promise<void> {
+    const send = async (): Promise<void> => {
+      if (!this.writeChar) {
+        throw new Error('Printer channel is closed.');
       }
-      await sleep(200);
-    } while (Date.now() < deadline);
-    // No ack within the window: the page was already streamed, so treat this as
-    // best-effort done rather than failing a label that likely printed.
-  }
 
-  /** Write a request, then wait up to `timeout` for the matching response opcode. */
-  private transceive(
-    request: Uint8Array<ArrayBuffer>,
-    responseType: number,
-    timeout = ACK_TIMEOUT_MS,
-  ): Promise<NiimbotPacket | null> {
-    const response = new Promise<NiimbotPacket | null>((resolve) => {
-      const waiter: Waiter = { type: responseType, resolve };
-      this.waiters.push(waiter);
-      setTimeout(() => {
-        const index = this.waiters.indexOf(waiter);
-        if (index !== -1) {
-          this.waiters.splice(index, 1);
-          resolve(null);
-        }
-      }, timeout);
-    });
-    void this.write(request);
-    return response;
-  }
+      await sleep(PACKET_INTERVAL_MS);
+      await this.writeChar.writeValueWithoutResponse(copyBytes(data));
+      this.emit('rawpacketsent', new RawPacketSentEvent(data));
+    };
 
-  /** Write a packet and pause briefly (for commands without a distinct ack). */
-  private async send(bytes: Uint8Array<ArrayBuffer>, delay: number): Promise<void> {
-    await this.write(bytes);
-    await sleep(delay);
-  }
-
-  private async write(bytes: Uint8Array<ArrayBuffer>): Promise<void> {
-    if (!this.writeChar) {
-      throw new PrinterError('Printer is not connected.');
+    if (force) {
+      await send();
+      return;
     }
-    if (this.writeWithoutResponse) {
-      await this.writeChar.writeValueWithoutResponse(bytes);
-    } else {
-      await this.writeChar.writeValue(bytes);
+
+    await this.mutex.runExclusive(send);
+  }
+
+  private async negotiateBestEffort(deviceName?: string): Promise<void> {
+    try {
+      await this.initialNegotiate();
+      await this.fetchPrinterInfo();
+    } catch {
+      this.info.modelId ??= modelIdFromDeviceName(deviceName);
+      this.info.protocolVersion ??= 0;
+      this.info.connectResult ??= ConnectResult.Connected;
     }
   }
 
   private readonly handleNotification = (event: Event): void => {
     const value = (event.target as BluetoothRemoteGATTCharacteristic).value;
-    if (!value) {
-      return;
+    if (value) {
+      this.processRawPacket(value);
     }
-    const incoming = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    this.rxBuffer = concat(this.rxBuffer, incoming);
-
-    const { packets, rest } = decodePackets(this.rxBuffer);
-    this.rxBuffer = rest;
-    for (const packet of packets) {
-      if (packet.type === Resp.ERROR || packet.type === Resp.NOT_SUPPORTED) {
-        continue;
-      }
-      const index = this.waiters.findIndex((waiter) => waiter.type === packet.type);
-      if (index !== -1) {
-        this.waiters.splice(index, 1)[0].resolve(packet);
-      }
-    }
-  };
-
-  private readonly handleDisconnect = (): void => {
-    this.writeChar = undefined;
-    this.notifyChar = undefined;
-    this.rxBuffer = new Uint8Array(0);
-    for (const waiter of this.waiters.splice(0)) {
-      waiter.resolve(null);
-    }
-    this.onDisconnect?.();
   };
 }
 
-/**
- * Find a writable + notifiable characteristic pair across the granted services.
- * Tolerates variants: a single characteristic that does both, or separate write
- * and notify characteristics, and write-with or without response.
- */
 async function discoverChannel(server: BluetoothRemoteGATTServer): Promise<Channel | undefined> {
-  // Right after connecting, service discovery can briefly report nothing; retry.
   let services: BluetoothRemoteGATTService[] = [];
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -239,68 +240,101 @@ async function discoverChannel(server: BluetoothRemoteGATTServer): Promise<Chann
         break;
       }
     } catch {
-      // "No Services found" is thrown here when discovery is not ready yet.
+      // Some devices briefly report no services immediately after connection.
     }
     await sleep(400);
   }
 
   let writeChar: BluetoothRemoteGATTCharacteristic | undefined;
   let notifyChar: BluetoothRemoteGATTCharacteristic | undefined;
-  let writeWithoutResponse = true;
-
   for (const service of services) {
     const characteristics = await service.getCharacteristics();
-    // Logged so an unknown printer variant's UUIDs/properties can be read from the console.
-    console.debug(
-      '[niimbot] service',
-      service.uuid,
-      'characteristics',
-      characteristics.map((c) => `${c.uuid} (${describeProperties(c)})`),
-    );
     for (const c of characteristics) {
       if (!notifyChar && (c.properties.notify || c.properties.indicate)) {
         notifyChar = c;
       }
-      if (c.properties.writeWithoutResponse) {
-        // Prefer a without-response writer; it's what the protocol expects.
-        if (!writeChar || !writeWithoutResponse) {
-          writeChar = c;
-          writeWithoutResponse = true;
-        }
-      } else if (c.properties.write && !writeChar) {
+      if (!writeChar && c.properties.writeWithoutResponse) {
         writeChar = c;
-        writeWithoutResponse = false;
+      }
+      if (c.properties.notify && c.properties.writeWithoutResponse) {
+        return { writeChar: c, notifyChar: c };
       }
     }
   }
 
-  return writeChar && notifyChar ? { writeChar, notifyChar, writeWithoutResponse } : undefined;
+  return writeChar && notifyChar ? { writeChar, notifyChar } : undefined;
 }
 
-function describeProperties(c: BluetoothRemoteGATTCharacteristic): string {
-  const p = c.properties;
-  const flags: string[] = [];
-  if (p.read) flags.push('read');
-  if (p.write) flags.push('write');
-  if (p.writeWithoutResponse) flags.push('writeNR');
-  if (p.notify) flags.push('notify');
-  if (p.indicate) flags.push('indicate');
-  return flags.join(',');
+function modelIdFromDeviceName(deviceName?: string): number {
+  const normalized = deviceName?.replace(/[-_\s]/g, '').toUpperCase() ?? '';
+  return normalized.startsWith('B21C2B') ? B21_C2B_MODEL_ID : B21_MODEL_ID;
 }
 
-function toCancellation(error: unknown): PrinterError {
+function validateBitmap(bitmap: LabelBitmap): void {
+  if (bitmap.widthDots <= 0 || bitmap.heightDots <= 0) {
+    throw new PrinterError('Label bitmap has invalid dimensions.');
+  }
+  if (bitmap.widthDots % 8 !== 0) {
+    throw new PrinterError('Label bitmap width must be a multiple of 8 dots.');
+  }
+
+  const expectedLength = (bitmap.widthDots / 8) * bitmap.heightDots;
+  if (bitmap.data.length !== expectedLength) {
+    throw new PrinterError('Label bitmap data does not match its dimensions.');
+  }
+  if (!bitmap.data.some((byte) => byte !== 0)) {
+    throw new PrinterError('Label bitmap is empty.');
+  }
+}
+
+function bitmapToCanvas(bitmap: LabelBitmap): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.widthDots;
+  canvas.height = bitmap.heightDots;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new PrinterError('Canvas 2D context is unavailable.');
+  }
+
+  const image = ctx.createImageData(bitmap.widthDots, bitmap.heightDots);
+  const rowBytes = bitmap.widthDots / 8;
+  for (let y = 0; y < bitmap.heightDots; y++) {
+    for (let x = 0; x < bitmap.widthDots; x++) {
+      const byte = bitmap.data[y * rowBytes + (x >> 3)];
+      const dark = (byte & (0x80 >> (x & 7))) !== 0;
+      const i = (y * bitmap.widthDots + x) * 4;
+      const value = dark ? 0 : 255;
+      image.data[i] = value;
+      image.data[i + 1] = value;
+      image.data[i + 2] = value;
+      image.data[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function toPrinterError(error: unknown): PrinterError {
   if (error instanceof DOMException && (error.name === 'NotFoundError' || error.name === 'AbortError')) {
     return new PrinterError('Printer selection cancelled.', true);
   }
-  const message = error instanceof Error ? error.message : 'Could not reach the printer.';
+  if (error instanceof NiimbotPrintError) {
+    return new PrinterError(error.message);
+  }
+  if (error instanceof PrinterError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : 'Could not print the label.';
   return new PrinterError(message);
 }
 
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
+function copyBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
+  const copy = new Uint8Array(data.length);
+  copy.set(data);
+  return copy;
 }
 
 function sleep(ms: number): Promise<void> {

@@ -30,13 +30,36 @@ import {
 } from '../types/product-unit.types';
 import { ProductUnitsService } from '../services/product-units.service';
 
-/** One unit staged for registration. The RFID tag is the scan anchor; serial/asset are optional. */
+/**
+ * One unit staged for registration. A unit is anchored by whichever identifier
+ * the operator captured first (a serial number by default, an EPC in RFID mode);
+ * the rest are optional enrichments. At least one must remain to register.
+ */
 interface StagedUnit {
-  /** Stable list key. The RFID tag is unique within a session, so it doubles as the key. */
+  /** Stable, generated list key, independent of which identifier anchors the unit. */
   readonly key: string;
   readonly rfidTag: string;
   serialNumber: string;
   assetTag: string;
+}
+
+/** Capture method: where a scanned or typed token lands. Serial number is the default. */
+type CaptureMode = 'SERIAL' | 'RFID';
+
+interface CaptureModeChip {
+  readonly value: CaptureMode;
+  readonly label: string;
+  readonly icon: string;
+  readonly placeholder: string;
+  readonly listening: string;
+}
+
+/** A staged unit flattened for display: one anchor value plus any other identifiers. */
+interface StagedRow {
+  readonly key: string;
+  readonly icon: string;
+  readonly value: string;
+  readonly meta: string | null;
 }
 
 interface NamedRecord {
@@ -105,6 +128,27 @@ export class CommissionSession {
   ];
 
   // --- Capture ---
+  protected readonly captureModes: CaptureModeChip[] = [
+    {
+      value: 'SERIAL',
+      label: 'Serial number',
+      icon: 'pi pi-hashtag',
+      placeholder: 'Scan or type a serial number…',
+      listening: 'Listening for serials',
+    },
+    {
+      value: 'RFID',
+      label: 'RFID sweep',
+      icon: 'pi pi-wifi',
+      placeholder: 'Sweep or scan RFID tags…',
+      listening: 'Listening for tags',
+    },
+  ];
+  protected readonly captureMode = signal<CaptureMode>('SERIAL');
+  protected readonly captureModeMeta = computed(
+    () => this.captureModes.find((mode) => mode.value === this.captureMode()) ?? this.captureModes[0],
+  );
+
   protected readonly staged = signal<StagedUnit[]>([]);
   protected readonly capture = new FormControl('', { nonNullable: true });
   protected readonly pasteControl = new FormControl('', { nonNullable: true });
@@ -117,6 +161,7 @@ export class CommissionSession {
   protected readonly editKey = signal<string | null>(null);
   protected readonly editSerial = new FormControl('', { nonNullable: true });
   protected readonly editAsset = new FormControl('', { nonNullable: true });
+  protected readonly enrichError = signal<string | null>(null);
 
   // --- Result ---
   protected readonly result = signal<RegisterProductUnitsResult | null>(null);
@@ -124,6 +169,28 @@ export class CommissionSession {
   protected readonly count = computed(() => this.staged().length);
   protected readonly overLimit = computed(() => this.count() > MAX_UNITS);
   protected readonly maxUnits = MAX_UNITS;
+
+  /** Flatten staged units for display: the anchor value, an icon, and any other identifiers. */
+  protected readonly stagedRows = computed<StagedRow[]>(() =>
+    this.staged().map((unit) => {
+      const parts: string[] = [];
+      if (unit.rfidTag) {
+        parts.push(`EPC ${unit.rfidTag}`);
+      }
+      if (unit.serialNumber) {
+        parts.push(`SN ${unit.serialNumber}`);
+      }
+      if (unit.assetTag) {
+        parts.push(`Asset ${unit.assetTag}`);
+      }
+      return {
+        key: unit.key,
+        icon: unit.rfidTag ? 'pi pi-wifi' : 'pi pi-hashtag',
+        value: unit.rfidTag || unit.serialNumber || unit.assetTag,
+        meta: parts.length > 1 ? parts.slice(1).join(' · ') : null,
+      };
+    }),
+  );
 
   protected readonly listening = computed(
     () => this.phase() === 'capturing' && !this.committing(),
@@ -134,6 +201,8 @@ export class CommissionSession {
   );
 
   private duplicateTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Monotonic source for stable staged-row keys, independent of the anchor identifier. */
+  private keySeq = 0;
 
   constructor() {
     this.loadOptions();
@@ -197,6 +266,12 @@ export class CommissionSession {
     }
   }
 
+  /** Switch what the scan field captures. Keeps the staged roster, so a batch can mix both. */
+  protected setCaptureMode(mode: CaptureMode): void {
+    this.captureMode.set(mode);
+    this.refocus();
+  }
+
   protected submitPaste(popover: Popover): void {
     const raw = this.pasteControl.value.trim();
     if (!raw) {
@@ -224,10 +299,15 @@ export class CommissionSession {
 
   // --- Per-row enrich ---
 
-  protected openEnrich(unit: StagedUnit, event: Event, popover: Popover): void {
-    this.editKey.set(unit.key);
+  protected openEnrich(key: string, event: Event, popover: Popover): void {
+    const unit = this.staged().find((staged) => staged.key === key);
+    if (!unit) {
+      return;
+    }
+    this.editKey.set(key);
     this.editSerial.setValue(unit.serialNumber);
     this.editAsset.setValue(unit.assetTag);
+    this.enrichError.set(null);
     popover.toggle(event);
   }
 
@@ -236,10 +316,19 @@ export class CommissionSession {
     if (!key) {
       return;
     }
+    const unit = this.staged().find((staged) => staged.key === key);
+    if (!unit) {
+      return;
+    }
     const serialNumber = this.editSerial.value.trim();
     const assetTag = this.editAsset.value.trim();
+    // A unit must keep at least one identifier; the backend rejects an empty one.
+    if (!unit.rfidTag && !serialNumber && !assetTag) {
+      this.enrichError.set('Keep at least a serial or asset tag.');
+      return;
+    }
     this.staged.update((list) =>
-      list.map((unit) => (unit.key === key ? { ...unit, serialNumber, assetTag } : unit)),
+      list.map((staged) => (staged.key === key ? { ...staged, serialNumber, assetTag } : staged)),
     );
     popover.hide();
     this.refocus();
@@ -263,7 +352,7 @@ export class CommissionSession {
         supplierId: this.supplierId() ?? undefined,
         note: this.note.value.trim() || undefined,
         units: this.staged().map((unit) => ({
-          rfidTag: unit.rfidTag,
+          rfidTag: unit.rfidTag || undefined,
           serialNumber: unit.serialNumber || undefined,
           assetTag: unit.assetTag || undefined,
         })),
@@ -305,8 +394,15 @@ export class CommissionSession {
       this.flagDuplicate(value);
       return;
     }
+    // The active mode decides what the token is: an EPC to encode, or a serial.
+    const isRfid = this.captureMode() === 'RFID';
     this.staged.update((list) => [
-      { key: value, rfidTag: value, serialNumber: '', assetTag: '' },
+      {
+        key: `u${this.keySeq++}`,
+        rfidTag: isRfid ? value : '',
+        serialNumber: isRfid ? '' : value,
+        assetTag: '',
+      },
       ...list,
     ]);
   }

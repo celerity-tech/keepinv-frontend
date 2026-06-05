@@ -41,27 +41,13 @@
             autocomplete="off"
             maxlength="64"
             placeholder="e.g. SKU-0001"
+            aria-describedby="pf-sku-help"
             [invalid]="form.controls.sku.touched && form.controls.sku.invalid"
             class="w-full text-sm tabular-nums"
           />
+          <p id="pf-sku-help" class="text-xs text-muted">The product's identity. How you find and refer to it.</p>
         </div>
         <div class="flex flex-col gap-1.5">
-          <label for="pf-barcode" class="text-sm font-medium">
-            Barcode <span class="font-normal text-muted">(optional)</span>
-          </label>
-          <input
-            pInputText
-            id="pf-barcode"
-            type="text"
-            formControlName="barcode"
-            autocomplete="off"
-            inputmode="numeric"
-            maxlength="64"
-            placeholder="Scan or type"
-            class="w-full text-sm tabular-nums"
-          />
-        </div>
-        <div class="flex flex-col gap-1.5 sm:col-span-2">
           <label for="pf-brand" class="text-sm font-medium">
             Brand <span class="font-normal text-muted">(optional)</span>
           </label>
@@ -75,6 +61,40 @@
             placeholder="Brand or manufacturer"
             class="w-full text-sm"
           />
+        </div>
+        <div class="flex flex-col gap-1.5 sm:col-span-2">
+          <label for="pf-barcode" class="text-sm font-medium">
+            Barcode <span class="font-normal text-muted">(optional, for scanning)</span>
+          </label>
+          <div class="flex items-start gap-2">
+            <input
+              pInputText
+              id="pf-barcode"
+              type="text"
+              formControlName="barcode"
+              autocomplete="off"
+              inputmode="numeric"
+              maxlength="64"
+              placeholder="Scan or type"
+              aria-describedby="pf-barcode-help"
+              class="min-w-0 flex-1 text-sm tabular-nums"
+            />
+            <p-button
+              type="button"
+              icon="pi pi-barcode"
+              label="Generate"
+              [outlined]="true"
+              [disabled]="hasBarcode()"
+              (onClick)="generateBarcode()"
+              styleClass="shrink-0 font-medium"
+              ariaLabel="Generate an internal barcode"
+            />
+          </div>
+          <p id="pf-barcode-help" class="text-xs text-muted">
+            Used to scan this item at the counter. Scan or type
+            the maker's barcode if the box has one, or generate an internal code to print your own
+            label. Leave blank to skip scanning or tag it later.
+          </p>
         </div>
       </div>
     </fieldset>
@@ -131,15 +151,16 @@
             inputStyleClass="w-full text-sm tabular-nums"
           />
         </div>
-        <div class="flex items-center gap-2 sm:pt-7">
-          <p-checkbox inputId="pf-serialized" formControlName="isSerialized" [binary]="true" />
-          <label for="pf-serialized" class="text-sm font-medium">Track serial numbers</label>
+        <div class="flex flex-col gap-1.5 sm:pt-7">
+          <div class="flex items-center gap-2">
+            <p-checkbox inputId="pf-serialized" formControlName="isSerialized" [binary]="true" />
+            <label for="pf-serialized" class="text-sm font-medium">Track serial numbers</label>
+          </div>
+          <p class="text-xs text-muted">
+            For items tracked one by one. Each unit's serial is recorded when stock arrives.
+          </p>
         </div>
       </div>
-      <p class="text-xs text-muted">
-        On-hand quantity isn't set here. New items start at zero and change only through stock
-        movements, so counts stay honest.
-      </p>
     </fieldset>
 
     <!-- Classification -->

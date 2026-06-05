@@ -19,18 +19,31 @@
 
       <div class="mt-6">
         <label for="audit-location" class="text-sm font-medium text-ink">Location</label>
-        <p-select
-          inputId="audit-location"
-          [formControl]="locationControl"
-          [options]="locationOptions()"
-          optionLabel="name"
-          optionValue="id"
-          [filter]="true"
-          filterBy="name"
-          placeholder="Select a location"
-          appendTo="body"
-          styleClass="mt-1.5 w-full"
-        />
+        <div class="mt-1.5 flex items-start gap-2">
+          <div class="min-w-0 flex-1">
+            <p-select
+              inputId="audit-location"
+              [formControl]="locationControl"
+              [options]="locationOptions()"
+              optionLabel="name"
+              optionValue="id"
+              [filter]="true"
+              filterBy="name"
+              placeholder="Select a location"
+              appendTo="body"
+              styleClass="w-full"
+            />
+          </div>
+          <p-button
+            type="button"
+            icon="pi pi-plus"
+            label="New"
+            [outlined]="true"
+            (onClick)="openQuickLocation(); locationCreatePop.toggle($event)"
+            styleClass="shrink-0 font-medium"
+            ariaLabel="Add a new location"
+          />
+        </div>
         @if (expectedPreview() !== null) {
           <p class="mt-2 inline-flex items-center gap-1.5 text-sm text-muted">
             <i class="pi pi-box text-xs" aria-hidden="true"></i>
@@ -58,6 +71,37 @@
       </div>
     </div>
   </div>
+
+  <!-- Quick-create a location without leaving setup -->
+  <p-popover #locationCreatePop appendTo="body">
+    <div class="w-72">
+      <label for="audit-new-location" class="text-sm font-medium text-ink">New location</label>
+      <div class="mt-1.5 flex items-start gap-2">
+        <input
+          pInputText
+          id="audit-new-location"
+          type="text"
+          [formControl]="quickLocationName"
+          autocomplete="off"
+          maxlength="100"
+          placeholder="e.g. Stockroom - Shelf A1"
+          (keydown.enter)="$event.preventDefault(); createLocation(locationCreatePop)"
+          class="w-full text-sm"
+        />
+        <p-button
+          type="button"
+          [label]="quickBusy() ? '...' : 'Add'"
+          [loading]="quickBusy()"
+          [disabled]="quickBusy()"
+          (onClick)="createLocation(locationCreatePop)"
+          styleClass="shrink-0 font-medium"
+        />
+      </div>
+      @if (quickError()) {
+        <p role="alert" class="mt-1.5 text-xs text-danger">{{ quickError() }}</p>
+      }
+    </div>
+  </p-popover>
 } @else if (report(); as audit) {
   <!-- Capture: the live session -->
   <div class="mx-auto max-w-5xl">

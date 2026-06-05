@@ -12,7 +12,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Observable, finalize, forkJoin } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
@@ -60,6 +60,7 @@ interface NamedRecord {
   ],
   templateUrl: './product-form.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '(document:keydown.escape)': 'onEscape()' },
 })
 export class ProductForm implements OnInit {
   private readonly formBuilder = inject(FormBuilder);
@@ -100,6 +101,13 @@ export class ProductForm implements OnInit {
     supplierId: this.formBuilder.control<string | null>(null),
     locationId: this.formBuilder.control<string | null>(null),
   });
+
+  /** Live mirror of the barcode control so the Generate action can react without zone churn. */
+  private readonly barcodeValue = toSignal(this.form.controls.barcode.valueChanges, {
+    initialValue: this.form.controls.barcode.value,
+  });
+  /** True once the field holds any code (manufacturer or internal). Generate hides behind this. */
+  protected readonly hasBarcode = computed(() => this.barcodeValue().trim().length > 0);
 
   /** Quick-create controls live outside the main form so they never affect its validity. */
   protected readonly quickCategoryName = new FormControl('', { nonNullable: true });
@@ -226,6 +234,35 @@ export class ProductForm implements OnInit {
 
   protected cancel(): void {
     this.cancelled.emit();
+  }
+
+  protected onEscape(): void {
+    this.cancel();
+  }
+
+  /**
+   * Fill the barcode with an internally generated, scannable code for products
+   * that carry no manufacturer barcode. Uses the GS1 in-store prefix (2) so it
+   * never collides with a real manufacturer GTIN, and a valid EAN-13 check digit
+   * so any scanner reads it back cleanly. The SKU stays the product's identity;
+   * this is purely a code to scan and print on a label. The server's unique
+   * constraint is the final guard against the rare clash.
+   */
+  protected generateBarcode(): void {
+    const seed = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const base = `2${seed.slice(-11).padStart(11, '0')}`;
+    const barcode = `${base}${this.eanCheckDigit(base)}`;
+    this.form.controls.barcode.setValue(barcode);
+    this.form.controls.barcode.markAsDirty();
+  }
+
+  /** Mod-10 check digit for a 12-digit EAN-13 base (weights 1, 3 from the left). */
+  private eanCheckDigit(base: string): string {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) {
+      sum += i % 2 === 0 ? Number(base[i]) : Number(base[i]) * 3;
+    }
+    return String((10 - (sum % 10)) % 10);
   }
 
   protected createCategory(popover: Popover): void {
