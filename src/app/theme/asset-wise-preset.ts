@@ -78,4 +78,24 @@ export const AssetWisePreset = definePreset(Aura, {
       },
     },
   },
+  components: {
+    /*
+     * Paginators live inside narrow (21-28rem) master-list panes. Keep nav
+     * buttons compact so the full control fits on one line, and honour the One
+     * Signal Rule: the selected page is the amber signal, not a pale tint.
+     */
+    paginator: {
+      root: {
+        padding: '0.5rem',
+        gap: '0.125rem',
+      },
+      navButton: {
+        width: '2.25rem',
+        height: '2.25rem',
+        borderRadius: '0.375rem',
+        selectedBackground: '{primary.color}',
+        selectedColor: '{primary.contrastColor}',
+      },
+    },
+  },
 });

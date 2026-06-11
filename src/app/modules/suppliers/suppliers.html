@@ -84,6 +84,7 @@
           [selection]="selected()"
           (selectionChange)="onSelectionChange($event)"
           [paginator]="count() > rows"
+          [pageLinks]="3"
           [rows]="rows"
           [globalFilterFields]="filterFields"
           [rowHover]="true"

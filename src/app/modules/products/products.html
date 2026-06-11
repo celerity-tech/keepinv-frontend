@@ -127,6 +127,7 @@
           [lazy]="true"
           (onLazyLoad)="onLazyLoad($event)"
           [paginator]="total() > rows"
+          [pageLinks]="3"
           [rows]="rows"
           [first]="first()"
           [totalRecords]="total()"
