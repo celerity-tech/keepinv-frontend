@@ -25,19 +25,32 @@
           <div class="mt-6 flex flex-col gap-5">
             <div class="flex flex-col gap-1.5">
               <label for="commission-location" class="text-sm font-medium text-ink">Location</label>
-              <p-select
-                inputId="commission-location"
-                [options]="locationOptions()"
-                optionLabel="name"
-                optionValue="id"
-                [filter]="true"
-                filterBy="name"
-                [ngModel]="locationId()"
-                (onChange)="locationId.set($event.value)"
-                placeholder="Choose a location"
-                appendTo="body"
-                styleClass="w-full text-sm"
-              />
+              <div class="flex items-start gap-2">
+                <div class="min-w-0 flex-1">
+                  <p-select
+                    inputId="commission-location"
+                    [options]="locationOptions()"
+                    optionLabel="name"
+                    optionValue="id"
+                    [filter]="true"
+                    filterBy="name"
+                    [ngModel]="locationId()"
+                    (onChange)="locationId.set($event.value)"
+                    placeholder="Choose a location"
+                    appendTo="body"
+                    styleClass="w-full text-sm"
+                  />
+                </div>
+                <p-button
+                  type="button"
+                  icon="pi pi-plus"
+                  label="New"
+                  [outlined]="true"
+                  (onClick)="openQuick(quickLocationName); locationPop.toggle($event)"
+                  styleClass="shrink-0 font-medium"
+                  ariaLabel="Add a new location"
+                />
+              </div>
             </div>
 
             <div class="flex flex-col gap-1.5">
@@ -62,20 +75,33 @@
               <label for="commission-supplier" class="text-sm font-medium text-ink">
                 Supplier <span class="font-normal text-muted">(optional)</span>
               </label>
-              <p-select
-                inputId="commission-supplier"
-                [options]="supplierOptions()"
-                optionLabel="name"
-                optionValue="id"
-                [filter]="true"
-                filterBy="name"
-                [showClear]="true"
-                [ngModel]="supplierId()"
-                (onChange)="supplierId.set($event.value)"
-                placeholder="No supplier"
-                appendTo="body"
-                styleClass="w-full text-sm"
-              />
+              <div class="flex items-start gap-2">
+                <div class="min-w-0 flex-1">
+                  <p-select
+                    inputId="commission-supplier"
+                    [options]="supplierOptions()"
+                    optionLabel="name"
+                    optionValue="id"
+                    [filter]="true"
+                    filterBy="name"
+                    [showClear]="true"
+                    [ngModel]="supplierId()"
+                    (onChange)="supplierId.set($event.value)"
+                    placeholder="No supplier"
+                    appendTo="body"
+                    styleClass="w-full text-sm"
+                  />
+                </div>
+                <p-button
+                  type="button"
+                  icon="pi pi-plus"
+                  label="New"
+                  [outlined]="true"
+                  (onClick)="openQuick(quickSupplierName); supplierPop.toggle($event)"
+                  styleClass="shrink-0 font-medium"
+                  ariaLabel="Add a new supplier"
+                />
+              </div>
             </div>
 
             <div class="flex flex-col gap-1.5">
@@ -109,6 +135,67 @@
         </div>
       </div>
     </div>
+
+    <!-- Quick-create popovers: add master data without leaving registration. -->
+    <p-popover #locationPop appendTo="body">
+      <div class="w-72">
+        <label for="commission-qc-location" class="text-sm font-medium text-ink">New location</label>
+        <div class="mt-1.5 flex items-start gap-2">
+          <input
+            pInputText
+            id="commission-qc-location"
+            type="text"
+            [formControl]="quickLocationName"
+            autocomplete="off"
+            maxlength="100"
+            placeholder="e.g. Stockroom - Shelf A1"
+            (keydown.enter)="$event.preventDefault(); createLocation(locationPop)"
+            class="w-full text-sm"
+          />
+          <p-button
+            type="button"
+            [label]="quickBusy() ? '...' : 'Add'"
+            [loading]="quickBusy()"
+            [disabled]="quickBusy()"
+            (onClick)="createLocation(locationPop)"
+            styleClass="shrink-0 font-medium"
+          />
+        </div>
+        @if (quickError()) {
+          <p role="alert" class="mt-1.5 text-xs text-danger">{{ quickError() }}</p>
+        }
+      </div>
+    </p-popover>
+
+    <p-popover #supplierPop appendTo="body">
+      <div class="w-72">
+        <label for="commission-qc-supplier" class="text-sm font-medium text-ink">New supplier</label>
+        <div class="mt-1.5 flex items-start gap-2">
+          <input
+            pInputText
+            id="commission-qc-supplier"
+            type="text"
+            [formControl]="quickSupplierName"
+            autocomplete="off"
+            maxlength="100"
+            placeholder="Supplier or vendor name"
+            (keydown.enter)="$event.preventDefault(); createSupplier(supplierPop)"
+            class="w-full text-sm"
+          />
+          <p-button
+            type="button"
+            [label]="quickBusy() ? '...' : 'Add'"
+            [loading]="quickBusy()"
+            [disabled]="quickBusy()"
+            (onClick)="createSupplier(supplierPop)"
+            styleClass="shrink-0 font-medium"
+          />
+        </div>
+        @if (quickError()) {
+          <p role="alert" class="mt-1.5 text-xs text-danger">{{ quickError() }}</p>
+        }
+      </div>
+    </p-popover>
   }
 
   @case ('capturing') {

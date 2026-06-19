@@ -263,24 +263,39 @@
 
             @if (statusShowsLocation()) {
               <div class="mt-3 flex flex-col gap-1.5">
-                <label for="unit-status-location" class="text-xs font-medium text-ink">
-                  Location
-                  @if (statusNeedsLocation()) {<span class="text-danger">*</span>}
-                </label>
-                <p-select
-                  inputId="unit-status-location"
-                  [options]="locationOptions()"
-                  optionLabel="name"
-                  optionValue="id"
-                  [filter]="true"
-                  filterBy="name"
-                  [showClear]="!statusNeedsLocation()"
-                  [ngModel]="statusLocationId()"
-                  (onChange)="statusLocationId.set($event.value)"
-                  [placeholder]="unit.location?.name || 'Choose a location'"
-                  appendTo="body"
-                  styleClass="w-full text-sm"
-                />
+                <div class="flex items-center justify-between gap-2">
+                  <label for="unit-status-location" class="text-xs font-medium text-ink">
+                    Location
+                    @if (statusNeedsLocation()) {<span class="text-danger">*</span>}
+                  </label>
+                  @if (!creatingLocation()) {
+                    <button
+                      type="button"
+                      (click)="startCreateLocation()"
+                      class="inline-flex items-center gap-1 text-xs font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:text-ink"
+                    >
+                      <i class="pi pi-plus text-[0.65rem]" aria-hidden="true"></i> New
+                    </button>
+                  }
+                </div>
+                @if (creatingLocation()) {
+                  <ng-container [ngTemplateOutlet]="locationCreator" />
+                } @else {
+                  <p-select
+                    inputId="unit-status-location"
+                    [options]="locationOptions()"
+                    optionLabel="name"
+                    optionValue="id"
+                    [filter]="true"
+                    filterBy="name"
+                    [showClear]="!statusNeedsLocation()"
+                    [ngModel]="statusLocationId()"
+                    (onChange)="statusLocationId.set($event.value)"
+                    [placeholder]="unit.location?.name || 'Choose a location'"
+                    appendTo="body"
+                    styleClass="w-full text-sm"
+                  />
+                }
               </div>
             }
 
@@ -347,21 +362,36 @@
                 <input pInputText id="unit-edit-asset" type="text" [formControl]="editAssetTag" maxlength="64" autocomplete="off" spellcheck="false" class="w-full text-sm tabular-nums" />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label for="unit-edit-location" class="text-xs font-medium text-ink">Location</label>
-                <p-select
-                  inputId="unit-edit-location"
-                  [options]="locationOptions()"
-                  optionLabel="name"
-                  optionValue="id"
-                  [filter]="true"
-                  filterBy="name"
-                  [showClear]="true"
-                  [ngModel]="editLocationId()"
-                  (onChange)="editLocationId.set($event.value)"
-                  placeholder="No location"
-                  appendTo="body"
-                  styleClass="w-full text-sm"
-                />
+                <div class="flex items-center justify-between gap-2">
+                  <label for="unit-edit-location" class="text-xs font-medium text-ink">Location</label>
+                  @if (!creatingLocation()) {
+                    <button
+                      type="button"
+                      (click)="startCreateLocation()"
+                      class="inline-flex items-center gap-1 text-xs font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:text-ink"
+                    >
+                      <i class="pi pi-plus text-[0.65rem]" aria-hidden="true"></i> New
+                    </button>
+                  }
+                </div>
+                @if (creatingLocation()) {
+                  <ng-container [ngTemplateOutlet]="locationCreator" />
+                } @else {
+                  <p-select
+                    inputId="unit-edit-location"
+                    [options]="locationOptions()"
+                    optionLabel="name"
+                    optionValue="id"
+                    [filter]="true"
+                    filterBy="name"
+                    [showClear]="true"
+                    [ngModel]="editLocationId()"
+                    (onChange)="editLocationId.set($event.value)"
+                    placeholder="No location"
+                    appendTo="body"
+                    styleClass="w-full text-sm"
+                  />
+                }
               </div>
             </div>
 
@@ -422,3 +452,42 @@
     </div>
   }
 </p-popover>
+
+<!-- Inline location creator, shared by the status and edit views via ngTemplateOutlet. -->
+<ng-template #locationCreator>
+  <div class="flex items-start gap-2">
+    <input
+      #newLocationInput
+      pInputText
+      type="text"
+      [formControl]="newLocationName"
+      maxlength="100"
+      autocomplete="off"
+      placeholder="e.g. Stockroom - Shelf A1"
+      (keydown.enter)="$event.preventDefault(); submitCreateLocation()"
+      (keydown.escape)="cancelCreateLocation()"
+      class="w-full text-sm"
+    />
+    <p-button
+      type="button"
+      [label]="locationBusy() ? '...' : 'Add'"
+      [loading]="locationBusy()"
+      [disabled]="locationBusy()"
+      (onClick)="submitCreateLocation()"
+      styleClass="shrink-0 font-medium"
+    />
+  </div>
+  <div class="mt-1.5 flex items-center justify-between gap-2">
+    <button
+      type="button"
+      (click)="cancelCreateLocation()"
+      [disabled]="locationBusy()"
+      class="text-xs font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:text-ink disabled:opacity-50"
+    >
+      Cancel
+    </button>
+    @if (locationCreateError()) {
+      <p role="alert" class="text-xs text-danger">{{ locationCreateError() }}</p>
+    }
+  </div>
+</ng-template>

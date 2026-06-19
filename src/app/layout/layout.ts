@@ -89,7 +89,7 @@ export class Layout {
     },
     {
       label: 'System',
-      items: [{ label: 'Settings', icon: 'pi pi-cog' }],
+      items: [{ label: 'Settings', icon: 'pi pi-cog', path: 'settings' }],
     },
   ];
 

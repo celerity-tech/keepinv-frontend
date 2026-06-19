@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { finalize } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 
@@ -42,7 +43,8 @@ type DetailTab = 'overview' | 'units';
     ProductForm,
     UnitsRoster,
     CommissionSession,
-    PrintLabelButton
+    PrintLabelButton,
+    RouterLink,
   ],
   templateUrl: './product-detail.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

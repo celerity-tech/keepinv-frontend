@@ -2,13 +2,16 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   computed,
   effect,
   inject,
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Observable, debounceTime, distinctUntilChanged, finalize } from 'rxjs';
@@ -62,6 +65,7 @@ type ActionView = 'menu' | 'writeTag' | 'status' | 'edit' | 'retire';
   imports: [
     ReactiveFormsModule,
     FormsModule,
+    NgTemplateOutlet,
     ButtonModule,
     InputTextModule,
     SelectModule,
@@ -136,6 +140,13 @@ export class UnitsRoster {
 
   protected readonly retireNote = new FormControl('', { nonNullable: true });
 
+  // --- Inline location quick-create, shared by the status and edit views ---
+  protected readonly creatingLocation = signal(false);
+  protected readonly newLocationName = new FormControl('', { nonNullable: true });
+  protected readonly locationBusy = signal(false);
+  protected readonly locationCreateError = signal<string | null>(null);
+  private readonly newLocationInput = viewChild<ElementRef<HTMLInputElement>>('newLocationInput');
+
   /** Status choices for the picker: every status except the unit's current one. */
   protected readonly statusOptions = computed(() => {
     const current = this.actionUnit()?.status;
@@ -186,6 +197,13 @@ export class UnitsRoster {
 
   constructor() {
     this.loadLocations();
+
+    // The inline location field grabs focus the moment it appears, keyboard-first.
+    effect(() => {
+      if (this.creatingLocation()) {
+        this.newLocationInput()?.nativeElement.focus();
+      }
+    });
 
     this.searchControl.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
@@ -271,6 +289,7 @@ export class UnitsRoster {
     this.actionView.set('menu');
     this.actionError.set(null);
     this.actionBusy.set(false);
+    this.creatingLocation.set(false);
     popover.toggle(event);
   }
 
@@ -285,6 +304,7 @@ export class UnitsRoster {
     this.statusLocationId.set(null);
     this.statusNote.reset('');
     this.actionError.set(null);
+    this.creatingLocation.set(false);
     this.actionView.set('status');
   }
 
@@ -295,6 +315,7 @@ export class UnitsRoster {
     this.editRfidTag.setValue(unit?.rfidTag ?? '');
     this.editLocationId.set(unit?.locationId ?? null);
     this.actionError.set(null);
+    this.creatingLocation.set(false);
     this.actionView.set('edit');
   }
 
@@ -312,6 +333,54 @@ export class UnitsRoster {
     this.targetStatus.set(status);
     // A fresh target drops any location chosen for a previous one.
     this.statusLocationId.set(null);
+  }
+
+  // --- Inline location quick-create ---
+
+  protected startCreateLocation(): void {
+    this.newLocationName.reset('');
+    this.locationCreateError.set(null);
+    this.creatingLocation.set(true);
+  }
+
+  protected cancelCreateLocation(): void {
+    this.creatingLocation.set(false);
+    this.locationCreateError.set(null);
+  }
+
+  /** Create a location inline and select it into whichever picker is open. */
+  protected submitCreateLocation(): void {
+    const name = this.newLocationName.value.trim();
+    this.locationCreateError.set(null);
+    if (!name) {
+      this.locationCreateError.set('Enter a name.');
+      return;
+    }
+    if (this.locationBusy()) {
+      return;
+    }
+
+    this.locationBusy.set(true);
+    this.locationsService
+      .create({ name })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.locationBusy.set(false)),
+      )
+      .subscribe({
+        next: (created) => {
+          this.locationOptions.update((list) => [{ id: created.id, name: created.name }, ...list]);
+          // Select the fresh location into the view that opened the creator.
+          if (this.actionView() === 'edit') {
+            this.editLocationId.set(created.id);
+          } else {
+            this.statusLocationId.set(created.id);
+          }
+          this.creatingLocation.set(false);
+        },
+        error: (error: unknown) =>
+          this.locationCreateError.set(httpErrorMessage(error, `"${name}"`)),
+      });
   }
 
   // --- Action submissions ---

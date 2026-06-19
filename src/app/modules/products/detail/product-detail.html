@@ -167,8 +167,16 @@
                 </div>
                 <div class="min-w-0">
                   <dt class="text-xs font-medium uppercase tracking-wide text-muted">Supplier</dt>
-                  <dd class="mt-0.5 truncate text-sm" [class.text-ink]="product().supplier" [class.text-muted]="!product().supplier">
-                    {{ product().supplier?.name || 'No supplier' }}
+                  <dd class="mt-0.5 text-sm">
+                    @if (product().supplier; as supplier) {
+                      <a
+                        [routerLink]="['/suppliers']"
+                        [queryParams]="{ supplier: product().supplierId }"
+                        class="rounded text-ink underline decoration-line underline-offset-2 outline-none hover:decoration-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                      >{{ supplier.name }}</a>
+                    } @else {
+                      <span class="text-muted">No supplier</span>
+                    }
                   </dd>
                 </div>
                 <div class="min-w-0">

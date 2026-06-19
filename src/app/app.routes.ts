@@ -49,6 +49,10 @@ export const routes: Routes = [
           import('./modules/stock-movements/stock-movements').then((m) => m.StockMovements),
       },
       {
+        path: 'settings',
+        loadComponent: () => import('./modules/settings/settings').then((m) => m.Settings),
+      },
+      {
         path: 'inventory-audit',
         loadComponent: () =>
           import('./modules/inventory-audit/inventory-audit').then((m) => m.InventoryAudit),

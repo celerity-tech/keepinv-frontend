@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { finalize } from 'rxjs';
+import { Observable, finalize } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
@@ -127,6 +127,12 @@ export class CommissionSession {
     { value: 'PURCHASE', label: 'Purchase', icon: 'pi pi-shopping-cart' },
   ];
 
+  // --- Inline master-data quick-create (location, supplier) for the setup step ---
+  protected readonly quickLocationName = new FormControl('', { nonNullable: true });
+  protected readonly quickSupplierName = new FormControl('', { nonNullable: true });
+  protected readonly quickBusy = signal(false);
+  protected readonly quickError = signal<string | null>(null);
+
   // --- Capture ---
   protected readonly captureModes: CaptureModeChip[] = [
     {
@@ -233,6 +239,68 @@ export class CommissionSession {
 
   protected exitSetup(): void {
     this.exited.emit();
+  }
+
+  /** Reset a quick-create popover's transient state as it opens. */
+  protected openQuick(control: FormControl<string>): void {
+    this.quickError.set(null);
+    control.reset('');
+  }
+
+  /** Create a location inline and drop it into the picker, already selected. */
+  protected createLocation(popover: Popover): void {
+    this.runQuickCreate(
+      this.quickLocationName,
+      (name) => this.locationsService.create({ name }),
+      (created) => {
+        this.locationOptions.update((list) => [{ id: created.id, name: created.name }, ...list]);
+        this.locationId.set(created.id);
+        popover.hide();
+      },
+    );
+  }
+
+  /** Create a supplier inline and drop it into the picker, already selected. */
+  protected createSupplier(popover: Popover): void {
+    this.runQuickCreate(
+      this.quickSupplierName,
+      (name) => this.suppliersService.create({ name }),
+      (created) => {
+        this.supplierOptions.update((list) => [{ id: created.id, name: created.name }, ...list]);
+        this.supplierId.set(created.id);
+        popover.hide();
+      },
+    );
+  }
+
+  private runQuickCreate<T extends NamedRecord>(
+    control: FormControl<string>,
+    create: (name: string) => Observable<T>,
+    onCreated: (created: T) => void,
+  ): void {
+    const name = control.value.trim();
+    this.quickError.set(null);
+    if (!name) {
+      this.quickError.set('Enter a name.');
+      return;
+    }
+    if (this.quickBusy()) {
+      return;
+    }
+
+    this.quickBusy.set(true);
+    create(name)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.quickBusy.set(false)),
+      )
+      .subscribe({
+        next: (created) => {
+          onCreated(created);
+          control.reset('');
+        },
+        error: (error: unknown) => this.quickError.set(httpErrorMessage(error, `"${name}"`)),
+      });
   }
 
   // --- Capture actions ---
