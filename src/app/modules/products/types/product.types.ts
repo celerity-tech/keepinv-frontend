@@ -3,7 +3,7 @@ import { Supplier } from '../../suppliers/types/supplier.types';
 import { Location } from '../../locations/types/location.types';
 
 /** Shown wherever a product has no uploaded photo. Lives in the app's `public/` folder. */
-export const PRODUCT_IMAGE_PLACEHOLDER = '/pxl-default-image.png';
+export const PRODUCT_IMAGE_PLACEHOLDER = '/assets/pxl-default-image.png';
 
 /** Image types and size ceiling the photo upload accepts; mirrors the backend's validation. */
 export const PRODUCT_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp';
