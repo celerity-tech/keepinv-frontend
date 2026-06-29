@@ -37,8 +37,8 @@ export class StockMovementsService {
     if (query.productId) {
       params = params.set('productId', query.productId);
     }
-    if (query.type) {
-      params = params.set('type', query.type);
+    if (query.stockMovementTypeId) {
+      params = params.set('stockMovementTypeId', query.stockMovementTypeId);
     }
     if (query.dateFrom) {
       params = params.set('dateFrom', query.dateFrom);

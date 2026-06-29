@@ -58,9 +58,9 @@
       <div class="flex flex-wrap items-center gap-2">
         <p-select
           [formControl]="typeFilter"
-          [options]="typeOptions"
-          optionLabel="label"
-          optionValue="value"
+          [options]="typeOptions()"
+          optionLabel="name"
+          optionValue="id"
           [showClear]="true"
           placeholder="All types"
           appendTo="body"
@@ -119,17 +119,18 @@
           <ng-template pTemplate="body" let-movement>
             <tr [pSelectableRow]="movement" class="cursor-pointer">
               <td class="px-4 py-3">
+                @let d = display(movement);
                 <div class="flex items-center gap-3">
                   <span
                     class="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-panel text-muted"
-                    [attr.aria-label]="metaOf(movement.type).label"
+                    [attr.aria-label]="d.name"
                   >
-                    <i [class]="metaOf(movement.type).icon" class="text-base" aria-hidden="true"></i>
+                    <i [class]="d.meta.icon" class="text-base" aria-hidden="true"></i>
                   </span>
                   <div class="min-w-0 flex-1">
                     <p class="truncate font-medium text-ink">{{ movement.product.name }}</p>
                     <p class="truncate text-xs tabular-nums text-muted">
-                      {{ metaOf(movement.type).label }} · {{ movement.createdAt | date: 'MMM d, h:mm a' }}
+                      {{ d.name }} · {{ movement.createdAt | date: 'MMM d, h:mm a' }}
                     </p>
                   </div>
                   <div class="shrink-0 text-right">

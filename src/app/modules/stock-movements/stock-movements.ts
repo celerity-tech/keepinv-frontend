@@ -20,13 +20,13 @@ import { ProductsService } from '../products/services/products.service';
 import { Product } from '../products/types/product.types';
 import { StockMovementsService } from './services/stock-movements.service';
 import {
-  MOVEMENT_TYPES,
-  MovementTypeOption,
+  MovementDisplay,
   StockMovement,
   StockMovementListQuery,
-  StockMovementType,
-  movementTypeMeta,
+  movementDisplay,
 } from './types/stock-movement.types';
+import { StockMovementType } from '../stock-movement-types/types/stock-movement-type.types';
+import { StockMovementTypesService } from '../stock-movement-types/services/stock-movement-types.service';
 import { StockMovementRecord } from './record/stock-movement-record';
 import { StockMovementDetail } from './detail/stock-movement-detail';
 
@@ -49,6 +49,7 @@ import { StockMovementDetail } from './detail/stock-movement-detail';
 export class StockMovements {
   private readonly service = inject(StockMovementsService);
   private readonly products = inject(ProductsService);
+  private readonly movementTypes = inject(StockMovementTypesService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly movements = signal<StockMovement[]>([]);
@@ -59,9 +60,10 @@ export class StockMovements {
   protected readonly rows = 10;
   protected readonly first = signal(0);
 
-  protected readonly typeOptions: MovementTypeOption[] = [...MOVEMENT_TYPES];
+  protected readonly typeOptions = signal<StockMovementType[]>([]);
   protected readonly productFilter = new FormControl<Product | null>(null);
-  protected readonly typeFilter = new FormControl<StockMovementType | null>(null);
+  /** Filters the ledger to one movement type, by id. */
+  protected readonly typeFilter = new FormControl<string | null>(null);
   /** Range picker value: [from, to]. */
   protected readonly dateRange = new FormControl<Date[] | null>(null);
   protected readonly productSuggestions = signal<Product[]>([]);
@@ -102,6 +104,12 @@ export class StockMovements {
       )
       .subscribe((items) => this.productSuggestions.set(items));
 
+    // Populate the type filter from the tenant's configured types.
+    this.movementTypes
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((items) => this.typeOptions.set(items));
+
     this.load();
   }
 
@@ -133,7 +141,7 @@ export class StockMovements {
       page: Math.floor(this.first() / this.rows) + 1,
       limit: this.rows,
       productId: this.productFilter.value?.id ?? undefined,
-      type: this.typeFilter.value ?? undefined,
+      stockMovementTypeId: this.typeFilter.value ?? undefined,
       dateFrom: this.startOfDayIso(range?.[0]),
       dateTo: this.endOfDayIso(range?.[1] ?? range?.[0]),
     };
@@ -193,8 +201,8 @@ export class StockMovements {
     this.paneOpenMobile.set(false);
   }
 
-  protected metaOf(type: StockMovementType): MovementTypeOption {
-    return movementTypeMeta(type);
+  protected display(movement: StockMovement): MovementDisplay {
+    return movementDisplay(movement);
   }
 
   protected changeLabel(value: number): string {

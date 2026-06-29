@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
 
-import { MovementUser, StockMovement, movementTypeMeta } from '../types/stock-movement.types';
+import { MovementUser, StockMovement, movementDisplay } from '../types/stock-movement.types';
 
 /**
  * Read-only detail for one ledger entry. Movements are immutable, so there are no
@@ -17,7 +17,7 @@ import { MovementUser, StockMovement, movementTypeMeta } from '../types/stock-mo
 export class StockMovementDetail {
   readonly movement = input.required<StockMovement>();
 
-  protected readonly meta = computed(() => movementTypeMeta(this.movement().type));
+  protected readonly display = computed(() => movementDisplay(this.movement()));
   /** Signed change with an explicit + so inflows read unambiguously. */
   protected readonly changeLabel = computed(() => {
     const change = this.movement().quantityChange;

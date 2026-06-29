@@ -1,9 +1,19 @@
 import { Product } from '../../products/types/product.types';
 import { Supplier } from '../../suppliers/types/supplier.types';
 import { Location } from '../../locations/types/location.types';
+import {
+  EffectMeta,
+  StockMovementEffect,
+  StockMovementType,
+  effectMeta,
+} from '../../stock-movement-types/types/stock-movement-type.types';
 
-/** Kinds of stock movement. Mirrors the backend `StockMovementType` enum. */
-export type StockMovementType =
+/**
+ * The pre-migration movement enum. Movements are now recorded against a configurable
+ * {@link StockMovementType}; this is retained only to render historical rows captured
+ * before the cutover, where `stockMovementType` may be absent.
+ */
+export type LegacyStockMovementType =
   | 'PURCHASE'
   | 'SALE'
   | 'ADJUSTMENT'
@@ -26,12 +36,19 @@ export interface MovementUser {
 /**
  * One immutable entry in the stock ledger. `quantityChange` is signed (positive
  * for stock in, negative for stock out) and `quantityAfter` is the resulting
- * on-hand, both computed by the backend. Related product/supplier/location/user
- * come embedded.
+ * on-hand, both computed by the backend. The movement's kind comes from the
+ * embedded `stockMovementType`; related product/supplier/location/user come
+ * embedded too.
  */
 export interface StockMovement {
   id: string;
-  type: StockMovementType;
+
+  /** The configurable type this movement was recorded under. */
+  stockMovementTypeId: string | null;
+  stockMovementType: StockMovementType | null;
+  /** Pre-cutover enum; only consulted as a display fallback when the type is absent. */
+  legacyType?: LegacyStockMovementType | null;
+
   quantityChange: number;
   quantityAfter: number;
   note: string | null;
@@ -54,12 +71,13 @@ export interface StockMovement {
 }
 
 /**
- * Payload to record a movement. `quantity` is always a positive integer; the
- * backend derives the signed change and resulting on-hand from the `type`.
+ * Payload to record a movement. `quantity` is always a positive count; the backend
+ * derives the signed change and resulting on-hand from the selected type's effect
+ * (an ADJUSTMENT type accepts a signed quantity).
  */
 export interface StockMovementRequest {
   productId: string;
-  type: StockMovementType;
+  stockMovementTypeId: string;
   quantity: number;
   note?: string;
   supplierId?: string | null;
@@ -72,62 +90,42 @@ export interface StockMovementListQuery {
   /** Capped at 50 by the backend. */
   limit: number;
   productId?: string;
-  type?: StockMovementType;
+  stockMovementTypeId?: string;
   /** ISO date string (inclusive lower bound). */
   dateFrom?: string;
   /** ISO date string (inclusive upper bound). */
   dateTo?: string;
 }
 
-/** Whether a movement adds to, removes from, or nets out stock. Drives badge styling. */
-export type MovementDirection = 'in' | 'out' | 'neutral';
-
-/** Display metadata for a movement type: label, icon, direction, and form behaviour. */
-export interface MovementTypeOption {
-  readonly label: string;
-  readonly value: StockMovementType;
-  /** PrimeIcons class, e.g. `pi pi-shopping-cart`. */
-  readonly icon: string;
-  readonly direction: MovementDirection;
-  /** Whether the record form surfaces a supplier field for this type. */
-  readonly needsSupplier: boolean;
-  /**
-   * Whether the type can be chosen in the record form. TRANSFER is hidden until
-   * the backend supports a source and destination location.
-   */
-  readonly selectable: boolean;
+/** Resolved label + effect metadata for a ledger row, ready to render. */
+export interface MovementDisplay {
+  readonly name: string;
+  readonly effect: StockMovementEffect;
+  readonly meta: EffectMeta;
 }
 
+/** Name + effect for legacy rows whose dynamic type didn't backfill, so they still read correctly. */
+const LEGACY_DISPLAY: Record<LegacyStockMovementType, { name: string; effect: StockMovementEffect }> = {
+  PURCHASE: { name: 'Purchase', effect: 'INCREASE' },
+  SALE: { name: 'Sale', effect: 'DECREASE' },
+  RETURN: { name: 'Return', effect: 'INCREASE' },
+  INITIAL: { name: 'Initial', effect: 'INCREASE' },
+  ADJUSTMENT: { name: 'Adjustment', effect: 'ADJUSTMENT' },
+  TRANSFER: { name: 'Transfer', effect: 'ADJUSTMENT' },
+};
+
 /**
- * Known movement types. TRANSFER is intentionally not selectable yet: the record
- * payload carries a single locationId and cannot express a source-to-destination
- * move. It still resolves here so historical TRANSFER rows display correctly.
+ * Resolve how a movement should read: its type name and effect metadata. Prefers the
+ * embedded dynamic type and falls back to the legacy enum for pre-cutover rows.
  */
-export const MOVEMENT_TYPES: readonly MovementTypeOption[] = [
-  { label: 'Purchase', value: 'PURCHASE', icon: 'pi pi-shopping-cart', direction: 'in', needsSupplier: true, selectable: true },
-  { label: 'Sale', value: 'SALE', icon: 'pi pi-shopping-bag', direction: 'out', needsSupplier: false, selectable: true },
-  { label: 'Adjustment', value: 'ADJUSTMENT', icon: 'pi pi-sliders-h', direction: 'neutral', needsSupplier: false, selectable: true },
-  { label: 'Return', value: 'RETURN', icon: 'pi pi-replay', direction: 'in', needsSupplier: true, selectable: true },
-  { label: 'Initial', value: 'INITIAL', icon: 'pi pi-flag', direction: 'in', needsSupplier: false, selectable: true },
-  { label: 'Transfer', value: 'TRANSFER', icon: 'pi pi-arrow-right-arrow-left', direction: 'neutral', needsSupplier: false, selectable: false },
-];
-
-/** Types offered in the record form picker. */
-export const SELECTABLE_MOVEMENT_TYPES: readonly MovementTypeOption[] = MOVEMENT_TYPES.filter(
-  (type) => type.selectable,
-);
-
-/** Resolve a movement type to its display metadata, tolerating values the enum may add later. */
-export function movementTypeMeta(value: StockMovementType): MovementTypeOption {
-  const known = MOVEMENT_TYPES.find((type) => type.value === value);
-  if (known) {
-    return known;
+export function movementDisplay(
+  movement: Pick<StockMovement, 'stockMovementType' | 'legacyType'>,
+): MovementDisplay {
+  const type = movement.stockMovementType;
+  if (type) {
+    return { name: type.name, effect: type.effect, meta: effectMeta(type.effect) };
   }
-  const label = value
-    .toLowerCase()
-    .split(/[\s_]+/)
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(' ');
-  return { label: label || 'Movement', value, icon: 'pi pi-arrows-v', direction: 'neutral', needsSupplier: false, selectable: false };
+  const legacy = movement.legacyType ? LEGACY_DISPLAY[movement.legacyType] : null;
+  const effect = legacy?.effect ?? 'ADJUSTMENT';
+  return { name: legacy?.name ?? 'Movement', effect, meta: effectMeta(effect) };
 }

@@ -54,6 +54,13 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/locations/locations').then((m) => m.Locations),
       },
       {
+        path: 'stock-movement-types',
+        loadComponent: () =>
+          import('./modules/stock-movement-types/stock-movement-types').then(
+            (m) => m.StockMovementTypes,
+          ),
+      },
+      {
         path: 'products',
         loadComponent: () => import('./modules/products/products').then((m) => m.Products),
       },

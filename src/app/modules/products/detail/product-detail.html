@@ -255,26 +255,6 @@
                     }
                   </dd>
                 </div>
-                <div class="min-w-0 sm:col-span-2">
-                  <dt class="text-xs font-medium uppercase tracking-wide text-muted">Reorder link</dt>
-                  <dd class="mt-0.5 text-sm">
-                    @if (reorder(); as r) {
-                      <a
-                        [href]="r.url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        [attr.aria-label]="'Open ' + r.label + ' reorder page in a new tab'"
-                        class="inline-flex max-w-full items-center gap-1.5 rounded text-ink underline decoration-line underline-offset-2 outline-none hover:decoration-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
-                      >
-                        <i [class]="r.icon" class="shrink-0 text-sm text-muted" aria-hidden="true"></i>
-                        <span class="truncate">{{ r.url }}</span>
-                        <i class="pi pi-external-link shrink-0 text-[0.7rem]" aria-hidden="true"></i>
-                      </a>
-                    } @else {
-                      <span class="text-muted">Not set</span>
-                    }
-                  </dd>
-                </div>
                 <div class="min-w-0">
                   <dt class="text-xs font-medium uppercase tracking-wide text-muted">Serial tracking</dt>
                   <dd class="mt-0.5 text-sm text-ink">{{ product().isSerialized ? 'On' : 'Off' }}</dd>

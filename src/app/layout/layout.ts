@@ -94,11 +94,15 @@ export class Layout {
       label: 'Catalog',
       items: [
         { label: 'Products', icon: 'pi pi-box', path: 'products', newShortcut: { key: 'p', verb: 'New product' } },
-        { label: 'Barcode Sheet', icon: 'pi pi-qrcode', path: 'barcode-sheet' },
         { label: 'Suppliers', icon: 'pi pi-truck', path: 'suppliers' },
         { label: 'Categories', icon: 'pi pi-th-large', path: 'categories' },
         { label: 'Locations', icon: 'pi pi-map-marker', path: 'locations' },
+        { label: 'Movement Types', icon: 'pi pi-tags', path: 'stock-movement-types' },
       ],
+    },
+    {
+      label: 'Tools',
+      items: [{ label: 'Barcode Sheet', icon: 'pi pi-qrcode', path: 'barcode-sheet' }],
     },
     {
       label: 'System',

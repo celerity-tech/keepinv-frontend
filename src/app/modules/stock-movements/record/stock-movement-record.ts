@@ -25,13 +25,14 @@ import { LocationsService } from '../../locations/services/locations.service';
 import { ProductsService } from '../../products/services/products.service';
 import { Product } from '../../products/types/product.types';
 import { StockMovementsService } from '../services/stock-movements.service';
+import { StockMovement } from '../types/stock-movement.types';
+import { StockMovementTypesService } from '../../stock-movement-types/services/stock-movement-types.service';
 import {
-  MovementTypeOption,
-  SELECTABLE_MOVEMENT_TYPES,
-  StockMovement,
+  StockMovementEffect,
   StockMovementType,
-  movementTypeMeta,
-} from '../types/stock-movement.types';
+  effectMeta,
+  isRecordableType,
+} from '../../stock-movement-types/types/stock-movement-type.types';
 
 /** A record with the minimum a `p-select` option needs: an id and a name. */
 interface NamedRecord {
@@ -64,6 +65,7 @@ interface NamedRecord {
 export class StockMovementRecord implements OnInit {
   private readonly formBuilder = inject(FormBuilder);
   private readonly movements = inject(StockMovementsService);
+  private readonly movementTypes = inject(StockMovementTypesService);
   private readonly products = inject(ProductsService);
   private readonly suppliers = inject(SuppliersService);
   private readonly locations = inject(LocationsService);
@@ -71,7 +73,8 @@ export class StockMovementRecord implements OnInit {
 
   readonly recorded = output<StockMovement>();
 
-  protected readonly types: MovementTypeOption[] = [...SELECTABLE_MOVEMENT_TYPES];
+  /** Recordable types the operator can pick (live from the catalog, Transfer excluded). */
+  protected readonly types = signal<StockMovementType[]>([]);
 
   protected readonly productSuggestions = signal<Product[]>([]);
   private readonly productQuery = new Subject<string>();
@@ -83,7 +86,7 @@ export class StockMovementRecord implements OnInit {
 
   protected readonly form = this.formBuilder.nonNullable.group({
     product: this.formBuilder.control<Product | null>(null, [Validators.required]),
-    type: this.formBuilder.control<StockMovementType | null>(null, [Validators.required]),
+    stockMovementTypeId: this.formBuilder.control<string | null>(null, [Validators.required]),
     quantity: this.formBuilder.control<number | null>(null, [
       Validators.required,
       Validators.min(1),
@@ -93,14 +96,15 @@ export class StockMovementRecord implements OnInit {
     locationId: this.formBuilder.control<string | null>(null),
   });
 
-  private readonly typeValue = toSignal(this.form.controls.type.valueChanges, {
-    initialValue: this.form.controls.type.value,
+  private readonly selectedTypeId = toSignal(this.form.controls.stockMovementTypeId.valueChanges, {
+    initialValue: this.form.controls.stockMovementTypeId.value,
   });
-  /** Supplier is only meaningful for incoming types (purchase, return). */
-  protected readonly needsSupplier = computed(() => {
-    const value = this.typeValue();
-    return value ? movementTypeMeta(value).needsSupplier : false;
-  });
+  /** The chosen type's full record, resolved from the loaded list. */
+  protected readonly selectedType = computed(() =>
+    this.types().find((type) => type.id === this.selectedTypeId()),
+  );
+  /** Supplier is only meaningful for incoming stock (types whose effect adds on-hand). */
+  protected readonly needsSupplier = computed(() => this.selectedType()?.effect === 'INCREASE');
 
   protected readonly quickSupplierName = new FormControl('', { nonNullable: true });
   protected readonly quickLocationName = new FormControl('', { nonNullable: true });
@@ -124,11 +128,12 @@ export class StockMovementRecord implements OnInit {
       )
       .subscribe((items) => this.productSuggestions.set(items));
 
-    // Clear a stale supplier when switching to a type that doesn't use one.
-    this.form.controls.type.valueChanges
+    // Clear a stale supplier when switching to a type that doesn't take one.
+    this.form.controls.stockMovementTypeId.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((type) => {
-        if (type && !movementTypeMeta(type).needsSupplier) {
+      .subscribe((id) => {
+        const type = this.types().find((option) => option.id === id);
+        if (!type || type.effect !== 'INCREASE') {
           this.form.controls.supplierId.setValue(null);
         }
       });
@@ -150,9 +155,9 @@ export class StockMovementRecord implements OnInit {
 
     const raw = this.form.getRawValue();
     const product = raw.product;
-    const type = raw.type;
+    const stockMovementTypeId = raw.stockMovementTypeId;
     const quantity = raw.quantity;
-    if (!product || !type || quantity == null) {
+    if (!product || !stockMovementTypeId || quantity == null) {
       return;
     }
 
@@ -162,7 +167,7 @@ export class StockMovementRecord implements OnInit {
     this.movements
       .record({
         productId: product.id,
-        type,
+        stockMovementTypeId,
         quantity,
         note: note.length ? note : undefined,
         supplierId: this.needsSupplier() ? raw.supplierId : undefined,
@@ -183,8 +188,15 @@ export class StockMovementRecord implements OnInit {
 
   /** Keep the chosen type so consecutive entries of the same kind stay fast. */
   private resetForNextEntry(): void {
-    const type = this.form.controls.type.value;
-    this.form.reset({ product: null, type, quantity: null, note: '', supplierId: null, locationId: null });
+    const stockMovementTypeId = this.form.controls.stockMovementTypeId.value;
+    this.form.reset({
+      product: null,
+      stockMovementTypeId,
+      quantity: null,
+      note: '',
+      supplierId: null,
+      locationId: null,
+    });
     this.formError.set(null);
     this.productSuggestions.set([]);
   }
@@ -248,7 +260,16 @@ export class StockMovementRecord implements OnInit {
       });
   }
 
+  /** PrimeIcons class for a type's effect, for the type picker's option rows. */
+  protected effectIcon(effectValue: StockMovementEffect): string {
+    return effectMeta(effectValue).icon;
+  }
+
   private loadOptions(): void {
+    this.movementTypes
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((items) => this.types.set(items.filter(isRecordableType)));
     this.suppliers
       .list()
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -264,7 +285,7 @@ export class StockMovementRecord implements OnInit {
     if (controls.product.invalid) {
       return 'Choose the product this movement applies to.';
     }
-    if (controls.type.invalid) {
+    if (controls.stockMovementTypeId.invalid) {
       return 'Choose a movement type.';
     }
     if (controls.quantity.invalid) {

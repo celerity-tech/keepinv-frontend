@@ -44,19 +44,20 @@
         <label for="sm-type" class="text-sm font-medium">Type</label>
         <p-select
           inputId="sm-type"
-          formControlName="type"
-          [options]="types"
-          optionLabel="label"
-          optionValue="value"
+          formControlName="stockMovementTypeId"
+          [options]="types()"
+          optionLabel="name"
+          optionValue="id"
           placeholder="Choose a type"
+          emptyMessage="No movement types yet"
           appendTo="body"
           styleClass="w-full text-sm"
-          [invalid]="form.controls.type.touched && form.controls.type.invalid"
+          [invalid]="form.controls.stockMovementTypeId.touched && form.controls.stockMovementTypeId.invalid"
         >
           <ng-template let-type pTemplate="item">
             <span class="flex items-center gap-2">
-              <i [class]="type.icon" class="text-sm text-muted" aria-hidden="true"></i>
-              {{ type.label }}
+              <i [class]="effectIcon(type.effect)" class="text-sm text-muted" aria-hidden="true"></i>
+              {{ type.name }}
             </span>
           </ng-template>
         </p-select>

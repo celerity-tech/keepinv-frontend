@@ -1,0 +1,267 @@
+<div class="mx-auto max-w-3xl">
+  <p class="max-w-prose text-sm text-muted">
+    Define the kinds of stock change your shop records — purchases, sales, returns, and any
+    custom movement your workflow needs. Built-in types can be renamed but their effect is fixed
+    and they can't be removed.
+  </p>
+
+  <!-- Quick add: name + effect. Description is set later via edit. -->
+  <form [formGroup]="addForm" (ngSubmit)="addType()" novalidate class="mt-6">
+    <label for="add-type" class="block text-sm font-medium">Add a movement type</label>
+    <input
+      pInputText
+      id="add-type"
+      #addInput
+      type="text"
+      formControlName="name"
+      placeholder="e.g. Damaged, Sample out, Stock count"
+      autocomplete="off"
+      maxlength="100"
+      [invalid]="!!addError()"
+      [attr.aria-describedby]="addError() ? 'add-error' : 'add-effect-help'"
+      class="mt-1.5 w-full text-sm"
+    />
+
+    <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        role="radiogroup"
+        aria-label="Effect on stock"
+        class="inline-flex w-full rounded-md border border-line bg-counter p-0.5 sm:w-auto"
+      >
+        @for (choice of effectChoices; track choice.value) {
+          <label class="relative flex-1 sm:flex-none">
+            <input type="radio" formControlName="effect" [value]="choice.value" class="peer sr-only" />
+            <span
+              class="flex cursor-pointer items-center justify-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-medium text-muted transition-colors hover:text-ink peer-checked:bg-ink peer-checked:text-counter peer-focus-visible:ring-2 peer-focus-visible:ring-signal peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-counter"
+            >
+              <i [class]="choice.icon" class="text-xs" aria-hidden="true"></i>
+              {{ choice.shortLabel }}
+            </span>
+          </label>
+        }
+      </div>
+      <p-button
+        type="submit"
+        [label]="creating() ? 'Adding...' : 'Add type'"
+        [loading]="creating()"
+        [disabled]="creating()"
+        styleClass="w-full shrink-0 font-medium sm:w-auto"
+      />
+    </div>
+
+    @if (addError()) {
+      <p id="add-error" role="alert" class="mt-2 text-xs text-danger">{{ addError() }}</p>
+    } @else {
+      <p id="add-effect-help" class="mt-2 text-xs text-muted">
+        Effect sets whether recording this type adds to, removes from, or adjusts on-hand stock.
+      </p>
+    }
+  </form>
+
+  <section class="mt-9" aria-labelledby="types-heading">
+    <div class="flex items-baseline justify-between gap-3">
+      <h2 id="types-heading" class="text-sm font-semibold tracking-tight">Your movement types</h2>
+      @if (!loading() && !loadError() && count() > 0) {
+        <span class="text-xs tabular-nums text-muted">
+          {{ count() }} {{ count() === 1 ? 'type' : 'types' }}
+        </span>
+      }
+    </div>
+
+    @if (loading()) {
+      <ul class="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-counter">
+        @for (placeholder of [0, 1, 2, 3]; track placeholder) {
+          <li class="flex items-center gap-3 px-4 py-3.5">
+            <div class="h-9 w-9 shrink-0 animate-pulse rounded-md bg-line motion-reduce:animate-none"></div>
+            <div class="h-3.5 w-44 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+          </li>
+        }
+      </ul>
+    } @else if (loadError()) {
+      <div class="mt-3 rounded-lg border border-line bg-counter px-6 py-10 text-center">
+        <p class="text-sm font-medium text-ink">Couldn't load movement types</p>
+        <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+          The server didn't respond. Check your connection and try again.
+        </p>
+        <p-button type="button" label="Retry" [text]="true" (onClick)="load()" styleClass="mt-3 font-medium" />
+      </div>
+    } @else if (isEmpty()) {
+      <div class="mt-3 rounded-lg border border-dashed border-line px-6 py-14 text-center">
+        <span class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-panel text-muted">
+          <i class="pi pi-arrows-v text-xl" aria-hidden="true"></i>
+        </span>
+        <p class="mt-3 text-sm font-medium text-ink">No movement types yet</p>
+        <p class="mx-auto mt-1 max-w-xs text-sm text-muted">
+          Add your first one above so movements can be recorded against it.
+        </p>
+      </div>
+    } @else {
+      <ul class="mt-3 divide-y divide-line overflow-hidden rounded-lg border border-line bg-counter">
+        @for (type of types(); track type.id) {
+          <li>
+            @if (isEditing(type)) {
+              <form
+                [formGroup]="editForm"
+                (ngSubmit)="saveEdit()"
+                novalidate
+                class="flex flex-col gap-2.5 px-4 py-3"
+              >
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    pInputText
+                    #editNameInput
+                    type="text"
+                    formControlName="name"
+                    aria-label="Type name"
+                    autocomplete="off"
+                    maxlength="100"
+                    [invalid]="!!editError()"
+                    class="w-full text-sm sm:flex-1"
+                  />
+                  <input
+                    pInputText
+                    type="text"
+                    formControlName="description"
+                    aria-label="Description"
+                    placeholder="Description (optional)"
+                    autocomplete="off"
+                    maxlength="255"
+                    class="w-full text-sm sm:flex-[1.4]"
+                  />
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <div
+                    role="radiogroup"
+                    aria-label="Effect on stock"
+                    class="inline-flex rounded-md border border-line bg-counter p-0.5"
+                    [class.opacity-60]="editingSystem()"
+                    [class.pointer-events-none]="editingSystem()"
+                  >
+                    @for (choice of effectChoices; track choice.value) {
+                      <label class="relative">
+                        <input
+                          type="radio"
+                          formControlName="effect"
+                          [value]="choice.value"
+                          class="peer sr-only"
+                        />
+                        <span
+                          class="flex cursor-pointer items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-medium text-muted transition-colors hover:text-ink peer-checked:bg-ink peer-checked:text-counter peer-focus-visible:ring-2 peer-focus-visible:ring-signal peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-counter"
+                        >
+                          <i [class]="choice.icon" class="text-xs" aria-hidden="true"></i>
+                          {{ choice.shortLabel }}
+                        </span>
+                      </label>
+                    }
+                  </div>
+                  @if (editingSystem()) {
+                    <span class="text-xs text-muted">Built-in type — its effect is fixed.</span>
+                  }
+                </div>
+
+                @if (editError()) {
+                  <p role="alert" class="text-xs text-danger">{{ editError() }}</p>
+                }
+                <div class="flex items-center gap-1.5">
+                  <p-button
+                    type="submit"
+                    [label]="savingEdit() ? 'Saving...' : 'Save'"
+                    [loading]="savingEdit()"
+                    [disabled]="savingEdit()"
+                    styleClass="font-medium"
+                  />
+                  <p-button
+                    type="button"
+                    label="Cancel"
+                    [text]="true"
+                    (onClick)="cancelEdit()"
+                    styleClass="text-muted"
+                  />
+                </div>
+              </form>
+            } @else if (isArchiving(type)) {
+              <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-ink">Archive "{{ type.name }}"?</p>
+                  <p class="mt-0.5 text-sm text-muted">
+                    It will no longer be offered when recording movements. Past entries keep it.
+                  </p>
+                  @if (archiveError()) {
+                    <p role="alert" class="mt-1 text-xs text-danger">{{ archiveError() }}</p>
+                  }
+                </div>
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <p-button
+                    type="button"
+                    severity="danger"
+                    [label]="busyId() === type.id ? 'Archiving...' : 'Archive'"
+                    [loading]="busyId() === type.id"
+                    [disabled]="busyId() === type.id"
+                    (onClick)="archive(type)"
+                    styleClass="font-medium"
+                  />
+                  <p-button
+                    type="button"
+                    label="Cancel"
+                    [text]="true"
+                    (onClick)="cancelArchive()"
+                    styleClass="text-muted"
+                  />
+                </div>
+              </div>
+            } @else {
+              <div class="group flex items-center gap-3 px-4 py-3">
+                <span
+                  class="grid h-9 w-9 shrink-0 place-items-center rounded-md"
+                  [class]="directionClasses(type.effect)"
+                  aria-hidden="true"
+                >
+                  <i [class]="meta(type.effect).icon" class="text-base"></i>
+                </span>
+                <div class="min-w-0 flex-1">
+                  <p class="flex items-center gap-1.5">
+                    <span class="truncate text-sm font-medium text-ink">{{ type.name }}</span>
+                    @if (isSystem(type)) {
+                      <span
+                        class="inline-flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-muted"
+                      >
+                        <i class="pi pi-lock text-[0.6rem]" aria-hidden="true"></i>
+                        System
+                      </span>
+                    }
+                  </p>
+                  <p class="mt-0.5 truncate text-xs text-muted">
+                    {{ meta(type.effect).label }}@if (type.description) {
+                      <span> · {{ type.description }}</span>
+                    }
+                  </p>
+                </div>
+                <div class="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    (click)="startEdit(type)"
+                    [attr.aria-label]="'Edit ' + type.name"
+                    class="grid h-8 w-8 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-line/60 hover:text-ink focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                  >
+                    <i class="pi pi-pencil text-base" aria-hidden="true"></i>
+                  </button>
+                  @if (!isSystem(type)) {
+                    <button
+                      type="button"
+                      (click)="confirmArchive(type)"
+                      [attr.aria-label]="'Archive ' + type.name"
+                      class="grid h-8 w-8 place-items-center rounded-md text-muted outline-none transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2 focus-visible:ring-offset-counter"
+                    >
+                      <i class="pi pi-trash text-base" aria-hidden="true"></i>
+                    </button>
+                  }
+                </div>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </section>
+</div>
